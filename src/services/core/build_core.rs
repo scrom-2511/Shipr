@@ -1,4 +1,7 @@
+use std::env;
+
 use tokio::process::Command;
+use uuid::Uuid;
 
 use crate::{app_errors::AppError, app_types::DeployDetails};
 
@@ -9,10 +12,20 @@ impl BuildCore {
         Self {}
     }
 
-    pub async fn run_cmds(cmds: &Vec<String>) -> Result<(), AppError> {
+    pub async fn run_cmds(
+        cmds: &Vec<String>,
+        home_dir: &str,
+        unique_folder_id: &Uuid,
+    ) -> Result<(), AppError> {
         if cmds.len() == 0 {
             return Ok(());
         }
+
+        let cwd = env::current_dir()
+            .map_err(|e| AppError::CurrentWorkingDirUnavailable(e.to_string()))?
+            .join("pull")
+            .join(unique_folder_id.to_string())
+            .join(home_dir);
 
         for cmd in cmds {
             let cmd_parts: Vec<&str> = cmd.split_whitespace().collect();
@@ -23,6 +36,7 @@ impl BuildCore {
 
             let output = Command::new(initial_part)
                 .args(&cmd_parts[1..])
+                .current_dir(&cwd)
                 .output()
                 .await
                 .map_err(|e| AppError::CmdFailed(e.to_string()))?;
@@ -38,13 +52,23 @@ impl BuildCore {
     }
 
     pub async fn install(deploy_details: &DeployDetails) -> Result<(), AppError> {
-        Self::run_cmds(&deploy_details.install_commands).await?;
+        Self::run_cmds(
+            &deploy_details.install_commands,
+            &deploy_details.home_dir,
+            &deploy_details.unique_id,
+        )
+        .await?;
 
         Ok(())
     }
 
     pub async fn build(deploy_details: &DeployDetails) -> Result<(), AppError> {
-        Self::run_cmds(&deploy_details.build_commands).await?;
+        Self::run_cmds(
+            &deploy_details.build_commands,
+            &deploy_details.home_dir,
+            &deploy_details.unique_id,
+        )
+        .await?;
 
         Ok(())
     }
