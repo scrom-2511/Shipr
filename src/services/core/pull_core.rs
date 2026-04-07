@@ -29,7 +29,8 @@ impl PullCore {
 
         let cwd = env::current_dir()
             .map_err(|_| AppError::InvalidGitUrl)?
-            .join("pull");
+            .join("pull")
+            .join(deploy_details.unique_id.to_string());
 
         fs::create_dir_all(&cwd).map_err(|e| AppError::DirCreationFailed(e.to_string()))?;
 
