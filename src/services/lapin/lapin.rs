@@ -17,4 +17,8 @@ impl Lapin {
 
         Ok(Self { connection: conn })
     }
+
+    pub async fn get_connection(&self) -> &Connection {
+        &self.connection
+    }
 }
