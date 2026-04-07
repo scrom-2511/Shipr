@@ -43,4 +43,22 @@ impl<'a> BuildQueue<'a> {
             queue,
         })
     }
+
+    pub async fn publish(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        let message = serde_json::to_string(deploy_details)
+            .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+        self.channel
+            .basic_publish(
+                ShortString::from("build_queue"),
+                ShortString::from("build_queue"),
+                Default::default(),
+                message.as_bytes(),
+                Default::default(),
+            )
+            .await
+            .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+        Ok(())
+    }
 }
