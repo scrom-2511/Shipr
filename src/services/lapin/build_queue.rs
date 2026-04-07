@@ -61,4 +61,33 @@ impl<'a> BuildQueue<'a> {
 
         Ok(())
     }
+
+    pub async fn consume(&self, consumer_tag: &str) -> Result<(), AppError> {
+        let mut consumer = self
+            .channel
+            .basic_consume(
+                ShortString::from("build_queue"),
+                ShortString::from(consumer_tag),
+                Default::default(),
+                Default::default(),
+            )
+            .await
+            .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+        while let Some(delivery) = consumer.next().await {
+            let delivery = delivery.map_err(|e| AppError::LapinError(e.to_string()))?;
+
+            let data = String::from_utf8_lossy(&delivery.data);
+
+            let data1 = serde_json::from_str::<DeployDetails>(&data)
+                .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+            delivery
+                .ack(BasicAckOptions::default())
+                .await
+                .map_err(|e| AppError::LapinError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
 }
