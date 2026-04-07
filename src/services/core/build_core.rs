@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, fs};
 
 use tokio::process::Command;
 use uuid::Uuid;
@@ -69,6 +69,21 @@ impl BuildCore {
             &deploy_details.unique_id,
         )
         .await?;
+
+        let cwd = env::current_dir()
+            .map_err(|e| AppError::CurrentWorkingDirUnavailable(e.to_string()))?;
+
+        let rename_from = cwd
+            .join("pull")
+            .join(&deploy_details.unique_id.to_string())
+            .join(&deploy_details.home_dir)
+            .join(&deploy_details.dist_dir);
+
+        let rename_to = cwd
+            .join("build")
+            .join(&deploy_details.unique_id.to_string());
+
+        fs::rename(rename_from, rename_to);
 
         Ok(())
     }
