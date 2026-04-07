@@ -61,4 +61,31 @@ impl<'a> PullQueue<'a> {
 
         Ok(())
     }
+
+    pub async fn consume(&self) -> Result<(), AppError> {
+        let mut consumer = self
+            .channel
+            .basic_consume(
+                ShortString::from("pull_queue"),
+                ShortString::from("pull_queue"),
+                Default::default(),
+                Default::default(),
+            )
+            .await
+            .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+        while let Some(delivery) = consumer.next().await {
+            let delivery = delivery.map_err(|e| AppError::LapinError(e.to_string()))?;
+
+            let data = serde_json::from_slice::<DeployDetails>(&delivery.data)
+                .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+            delivery
+                .ack(BasicAckOptions::default())
+                .await
+                .map_err(|e| AppError::LapinError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
 }
