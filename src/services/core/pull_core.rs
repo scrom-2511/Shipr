@@ -21,4 +21,32 @@ impl PullCore {
 
         Err(AppError::InvalidGitUrl)
     }
+
+    pub async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        let git_url = &deploy_details.url;
+
+        Self::git_url_validator(git_url)?;
+
+        let cwd = env::current_dir()
+            .map_err(|_| AppError::InvalidGitUrl)?
+            .join("pull");
+
+        fs::create_dir_all(&cwd).map_err(|e| AppError::DirCreationFailed(e.to_string()))?;
+
+        let output = Command::new("git")
+            .arg("clone")
+            .arg(git_url)
+            .current_dir(cwd)
+            .output()
+            .await
+            .map_err(|e| AppError::GitCloneFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            return Err(AppError::GitCloneFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
+        }
+
+        Ok(())
+    }
 }
