@@ -36,4 +36,16 @@ impl BuildCore {
 
         Ok(())
     }
+
+    pub async fn install(deploy_details: &DeployDetails) -> Result<(), AppError> {
+        Self::run_cmds(&deploy_details.install_commands).await?;
+
+        Ok(())
+    }
+
+    pub async fn build(deploy_details: &DeployDetails) -> Result<(), AppError> {
+        Self::run_cmds(&deploy_details.build_commands).await?;
+
+        Ok(())
+    }
 }
