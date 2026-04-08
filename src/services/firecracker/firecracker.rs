@@ -204,6 +204,7 @@ impl Firecracker {
         Self::enable_ip_forwarding().await?;
         Self::set_internet_access().await?;
         Self::configure_firecracker().await?;
+        Self::setup_guest_ssh().await?;
 
         Ok(())
     }
