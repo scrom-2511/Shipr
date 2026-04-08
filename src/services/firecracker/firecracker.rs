@@ -9,31 +9,23 @@ impl Firecracker {
         Self
     }
 
-    async fn run_cmds(cmds: &Vec<String>) -> Result<(), AppError> {
-        if cmds.len() == 0 {
-            return Ok(());
-        }
+    async fn run_cmd(cmd: &str) -> Result<(), AppError> {
+        let cmd_parts: Vec<&str> = cmd.split_whitespace().collect();
 
-        for cmd in cmds {
-            let cmd_parts: Vec<&str> = cmd.split_whitespace().collect();
+        let initial_part = cmd_parts
+            .get(0)
+            .ok_or_else(|| AppError::CmdFailed("Empty command".into()))?;
 
-            print!("{:?}", cmd_parts);
+        let output = Command::new(initial_part)
+            .args(&cmd_parts[1..])
+            .output()
+            .await
+            .map_err(|e| AppError::CmdFailed(e.to_string()))?;
 
-            let initial_part = cmd_parts
-                .get(0)
-                .ok_or_else(|| AppError::CmdFailed("Empty command".into()))?;
-
-            let output = Command::new(initial_part)
-                .args(&cmd_parts[1..])
-                .output()
-                .await
-                .map_err(|e| AppError::CmdFailed(e.to_string()))?;
-
-            if !output.status.success() {
-                return Err(AppError::CmdFailed(
-                    String::from_utf8_lossy(&output.stderr).to_string(),
-                ));
-            }
+        if !output.status.success() {
+            return Err(AppError::CmdFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
         }
 
         Ok(())
@@ -46,7 +38,7 @@ impl Firecracker {
 
         let firecracker_path = "/home/scrom/firecracker-main";
 
-        Self::run_cmds(&vec![cleanup_cmd]).await?;
+        Self::run_cmds(&cleanup_cmd).await?;
 
         Command::new("sudo")
             .current_dir("/home/scrom")
