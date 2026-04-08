@@ -83,4 +83,21 @@ impl Firecracker {
 
         Ok(())
     }
+
+    async fn set_internet_access() -> Result<(), AppError> {
+        let HOST_IFACE = r#"ip -j route list default |jq -r '.[0].dev"#;
+
+        let cmd_1 = format!(
+            "sudo iptables -t nat -D POSTROUTING -o {} -j MASQUERADE || true",
+            HOST_IFACE
+        );
+        let cmd_2 = format!(
+            "sudo iptables -t nat -A POSTROUTING -o {} -j MASQUERADE",
+            HOST_IFACE
+        );
+
+        Self::run_cmds(&vec![&cmd_1, &cmd_2]).await?;
+
+        Ok(())
+    }
 }
