@@ -74,4 +74,13 @@ impl Firecracker {
 
         Ok(())
     }
+
+    async fn enable_ip_forwarding() -> Result<(), AppError> {
+        let cmd_1 = r#"sudo sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward"#;
+        let cmd_2 = r#"sudo iptables -P FORWARD ACCEPT"#;
+
+        Self::run_cmds(&vec![&cmd_1, &cmd_2]).await?;
+
+        Ok(())
+    }
 }
