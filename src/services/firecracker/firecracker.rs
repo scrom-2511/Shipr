@@ -181,4 +181,30 @@ impl Firecracker {
 
         Ok(())
     }
+
+    async fn setup_guest_ssh() -> Result<(), AppError> {
+        let cmd_key = r#"KEY_NAME=./$(ls *.id_rsa | tail -1)"#;
+
+        let cmd_route =
+            r#"ssh -i $KEY_NAME root@172.16.0.2 "ip route add default via 172.16.0.1 dev eth0""#;
+
+        let cmd_dns =
+            r#"ssh -i $KEY_NAME root@172.16.0.2 "echo 'nameserver 8.8.8.8' > /etc/resolv.conf""#;
+
+        let cmd_ssh = r#"ssh -i $KEY_NAME root@172.16.0.2"#;
+
+        Self::run_cmds(&vec![cmd_key, cmd_route, cmd_dns, cmd_ssh]).await?;
+
+        Ok(())
+    }
+
+    pub async fn full_start() -> Result<(), AppError> {
+        Self::start().await?;
+        Self::set_network_interface().await?;
+        Self::enable_ip_forwarding().await?;
+        Self::set_internet_access().await?;
+        Self::configure_firecracker().await?;
+
+        Ok(())
+    }
 }
