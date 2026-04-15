@@ -187,6 +187,20 @@ impl Firecracker {
         Ok(())
     }
 
+    pub async fn destroy_vm(&self) -> Result<(), AppError> {
+        self.execute_command("reboot").await?;
+        let cmd_1 = format!(
+            r#"sudo ip link del tap{} 2> /dev/null || true"#,
+            self.unique_id
+        );
+
+        let cmd_2 = format!(r#"rm rootfs{}.ext4"#, self.unique_id);
+
+        self.run_script(vec![&cmd_1, &cmd_2])?;
+
+        Ok(())
+    }
+
     pub async fn all_setup(&mut self) -> Result<(), AppError> {
         self.setup_network()?;
         println!("network setup done");
