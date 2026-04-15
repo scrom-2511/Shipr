@@ -93,7 +93,6 @@ impl Firecracker {
         let data = serde_json::json!({
             "vcpu_count": 1,
             "mem_size_mib": 1024,
-            "ht_enabled": false
         });
 
         self.client
@@ -126,7 +125,7 @@ impl Firecracker {
     }
 
     pub async fn set_rootfs(&self) -> Result<(), AppError> {
-        let copy_rootfs = format!(r#"cp ubuntu-24.04.ext4 rootfs{}.ext4"#, self.unique_id);
+        let copy_rootfs = format!(r#"cp rootfs.ext4 rootfs{}.ext4"#, self.unique_id);
 
         self.run_script(vec![&copy_rootfs])?;
 
@@ -221,6 +220,9 @@ impl Firecracker {
     pub async fn all_setup(&mut self) -> Result<(), AppError> {
         self.setup_network()?;
         println!("network setup done");
+
+        self.set_machine_config().await?;
+        println!("machine config set");
 
         self.set_boot_source().await?;
         println!("boot source set");
