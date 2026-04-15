@@ -175,6 +175,18 @@ impl Firecracker {
         Ok(())
     }
 
+    pub async fn execute_command(&self, command: &str) -> Result<(), AppError> {
+        let cmd = format!(
+            r#"ssh -i ubuntu-24.04.id_rsa root@172.16.0.{} '{}'"#,
+            self.base_id + 2,
+            command
+        );
+
+        self.run_script(vec![&cmd])?;
+
+        Ok(())
+    }
+
     pub async fn all_setup(&mut self) -> Result<(), AppError> {
         self.setup_network()?;
         println!("network setup done");
