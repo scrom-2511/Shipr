@@ -4,12 +4,13 @@ use crate::app_errors::AppError;
 
 pub struct Firecracker {
     api_socket: String,
-    unique_id: String,
+    unique_id: u32,
     client: reqwest::Client,
+    base_id: u32,
 }
 
 impl Firecracker {
-    pub fn new(unique_id: String) -> Self {
+    pub fn new(unique_id: u32) -> Self {
         let api_socket = format!("/tmp/firecracker-{}.socket", unique_id);
 
         let path: &str = api_socket.as_ref();
@@ -19,10 +20,13 @@ impl Firecracker {
             .build()
             .unwrap();
 
+        let base_id = unique_id * 4;
+
         Self {
             api_socket,
             unique_id,
             client,
+            base_id,
         }
     }
 
@@ -69,7 +73,7 @@ impl Firecracker {
 
     pub fn setup_network(&self) -> Result<(), AppError> {
         let tap_dev = format!("tap{}", self.unique_id);
-        let tap_ip = format!("172.16.0.{}", self.unique_id);
+        let tap_ip = format!("172.16.0.{}", self.base_id + 1);
         let mask_short = "/30";
 
         let cmd_1 = format!(r#"sudo ip link del {} 2> /dev/null || true"#, tap_dev);
@@ -130,7 +134,13 @@ impl Firecracker {
 
     pub async fn set_network_interface(&self) -> Result<(), AppError> {
         let tap_dev = format!("tap{}", self.unique_id);
-        let fc_mac = format!("06:00:AC:10:00:{}", self.unique_id);
+
+        let vm_last_octet = self.base_id + 2;
+
+        let fc_mac = format!(
+            "06:00:{:02X}:{:02X}:{:02X}:{:02X}",
+            172, 16, 0, vm_last_octet
+        );
 
         let data = serde_json::json!({
             "iface_id": "net1",
