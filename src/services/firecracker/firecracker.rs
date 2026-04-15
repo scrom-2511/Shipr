@@ -89,6 +89,23 @@ impl Firecracker {
         Ok(())
     }
 
+    pub async fn set_machine_config(&self) -> Result<(), AppError> {
+        let data = serde_json::json!({
+            "vcpu_count": 1,
+            "mem_size_mib": 1024,
+            "ht_enabled": false
+        });
+
+        self.client
+            .put("http://localhost/machine-config")
+            .json(&data)
+            .send()
+            .await
+            .map_err(|e| AppError::StartingFirecrackerFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
     pub async fn set_boot_source(&self) -> Result<(), AppError> {
         let kernel = "/home/scrom/vmlinux-6.1.155";
         let kernel_boot_args = "console=ttyS0 reboot=k panic=1";
