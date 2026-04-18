@@ -42,7 +42,8 @@ impl Firecracker {
 
         Ok(())
     }
-    pub fn init_vm(&mut self) -> Result<(), AppError> {
+
+    fn init_vm(&mut self) -> Result<(), AppError> {
         let cmd_1 = format!(r#"sudo rm -f {}"#, self.api_socket);
         let cmd_2 = format!(
             r#"./firecracker --api-sock {} --enable-pci"#,
@@ -58,10 +59,6 @@ impl Firecracker {
             .spawn()
             .map_err(|e| AppError::StartingFirecrackerFailed(e.to_string()))?;
 
-        child
-            .wait()
-            .map_err(|e| AppError::StartingFirecrackerFailed(e.to_string()))?;
-
         let path: &str = self.api_socket.as_ref();
         self.client = reqwest::Client::builder()
             .unix_socket(path)
@@ -71,9 +68,10 @@ impl Firecracker {
         Ok(())
     }
 
-    pub fn setup_network(&self) -> Result<(), AppError> {
+    fn setup_network(&self) -> Result<(), AppError> {
         let tap_dev = format!("tap{}", self.unique_id);
         let tap_ip = format!("172.16.0.{}", self.base_id + 1);
+        println!("tap_ip: {}", tap_ip);
         let mask_short = "/30";
 
         let cmd_1 = format!(r#"sudo ip link del {} 2> /dev/null || true"#, tap_dev);
@@ -89,7 +87,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn set_machine_config(&self) -> Result<(), AppError> {
+    async fn set_machine_config(&self) -> Result<(), AppError> {
         let data = serde_json::json!({
             "vcpu_count": 1,
             "mem_size_mib": 1024,
@@ -105,7 +103,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn set_boot_source(&self) -> Result<(), AppError> {
+    async fn set_boot_source(&self) -> Result<(), AppError> {
         let kernel = "/home/scrom/vmlinux-6.1.155";
         let kernel_boot_args = "console=ttyS0 reboot=k panic=1";
 
@@ -124,7 +122,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn set_rootfs(&self) -> Result<(), AppError> {
+    async fn set_rootfs(&self) -> Result<(), AppError> {
         let copy_rootfs = format!(r#"cp rootfs.ext4 rootfs{}.ext4"#, self.unique_id);
 
         self.run_script(vec![&copy_rootfs])?;
@@ -148,7 +146,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn set_network_interface(&self) -> Result<(), AppError> {
+    async fn set_network_interface(&self) -> Result<(), AppError> {
         let tap_dev = format!("tap{}", self.unique_id);
 
         let vm_last_octet = self.base_id + 2;
@@ -174,7 +172,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn start_instance(&self) -> Result<(), AppError> {
+    async fn start_instance(&self) -> Result<(), AppError> {
         let data = serde_json::json!({
             "action_type": "InstanceStart"
         });
@@ -203,6 +201,15 @@ impl Firecracker {
         Ok(())
     }
 
+    async fn setup_ssh(&self) -> Result<(), AppError> {
+        self.execute_command("ip route add default via 172.16.0.1 dev eth0")
+            .await?;
+        self.execute_command("echo 'nameserver 8.8.8.8' > /etc/resolv.conf")
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn destroy_vm(&self) -> Result<(), AppError> {
         self.execute_command("reboot").await?;
         let cmd_1 = format!(
@@ -217,7 +224,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn all_setup(&mut self) -> Result<(), AppError> {
+    async fn all_setup(&mut self) -> Result<(), AppError> {
         self.setup_network()?;
         println!("network setup done");
 
@@ -235,6 +242,20 @@ impl Firecracker {
 
         self.start_instance().await?;
         println!("instance started");
+
+        Ok(())
+    }
+
+    pub async fn create_vm(&mut self) -> Result<(), AppError> {
+        self.init_vm()?;
+        sleep(Duration::from_secs(3));
+        self.setup_network()?;
+        self.set_machine_config().await?;
+        self.set_boot_source().await?;
+        self.set_rootfs().await?;
+        self.set_network_interface().await?;
+        self.start_instance().await?;
+        self.setup_ssh().await?;
 
         Ok(())
     }
