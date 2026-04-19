@@ -1,16 +1,16 @@
+use crate::{app_errors::AppError, utils::run_script::run_script};
 use std::{process::Command, thread::sleep, time::Duration};
-
-use crate::app_errors::AppError;
 
 pub struct Firecracker {
     api_socket: String,
     unique_id: u32,
     client: reqwest::Client,
     base_id: u32,
+    lang: String,
 }
 
 impl Firecracker {
-    pub fn new(unique_id: u32) -> Self {
+    pub fn new(unique_id: u32, lang: String) -> Self {
         let api_socket = format!("/tmp/firecracker-{}.socket", unique_id);
 
         let path: &str = api_socket.as_ref();
@@ -27,20 +27,8 @@ impl Firecracker {
             unique_id,
             client,
             base_id,
+            lang,
         }
-    }
-
-    fn run_script(&self, script: Vec<&str>) -> Result<(), AppError> {
-        for cmd in script {
-            let output = Command::new("bash")
-                .arg("-c")
-                .arg(cmd)
-                .current_dir("/home/scrom")
-                .output()
-                .map_err(|e| AppError::StartingFirecrackerFailed(e.to_string()))?;
-        }
-
-        Ok(())
     }
 
     fn init_vm(&mut self) -> Result<(), AppError> {
@@ -50,7 +38,7 @@ impl Firecracker {
             self.api_socket
         );
 
-        self.run_script(vec![&cmd_1])?;
+        run_script(vec![&cmd_1])?;
 
         let mut child = Command::new("bash")
             .arg("-c")
@@ -82,7 +70,7 @@ impl Firecracker {
         );
         let cmd_4 = format!(r#"sudo ip link set dev {} up"#, tap_dev);
 
-        self.run_script(vec![&cmd_1, &cmd_2, &cmd_3, &cmd_4])?;
+        run_script(vec![&cmd_1, &cmd_2, &cmd_3, &cmd_4])?;
 
         Ok(())
     }
@@ -123,11 +111,13 @@ impl Firecracker {
     }
 
     async fn set_rootfs(&self) -> Result<(), AppError> {
-        let copy_rootfs = format!(r#"cp rootfs.ext4 rootfs{}.ext4"#, self.unique_id);
+        let rootfs_path = format!("rootfs-{}.ext4", self.lang);
+        println!("rootfs_path: {}", rootfs_path);
+        let copy_rootfs = format!(r#"cp {} rootfs-{}.ext4"#, rootfs_path, self.unique_id);
 
-        self.run_script(vec![&copy_rootfs])?;
+        run_script(vec![&copy_rootfs])?;
 
-        let rootfs = format!("/home/scrom/rootfs{}.ext4", self.unique_id);
+        let rootfs = format!("/home/scrom/rootfs-{}.ext4", self.unique_id);
 
         let data = serde_json::json!({
             "drive_id": "rootfs",
@@ -191,12 +181,12 @@ impl Firecracker {
 
     pub async fn execute_command(&self, command: &str) -> Result<(), AppError> {
         let cmd = format!(
-            r#"ssh -i ubuntu-24.04.id_rsa root@172.16.0.{} '{}'"#,
+            r#"ssh -t -i ubuntu.id_rsa root@172.16.0.{} 'bash -i -c "{}"'"#,
             self.base_id + 2,
             command
         );
 
-        self.run_script(vec![&cmd])?;
+        run_script(vec![&cmd])?;
 
         Ok(())
     }
@@ -217,9 +207,9 @@ impl Firecracker {
             self.unique_id
         );
 
-        let cmd_2 = format!(r#"rm rootfs{}.ext4"#, self.unique_id);
+        let cmd_2 = format!(r#"rm rootfs-{}.ext4"#, self.unique_id);
 
-        self.run_script(vec![&cmd_1, &cmd_2])?;
+        run_script(vec![&cmd_1, &cmd_2])?;
 
         Ok(())
     }
