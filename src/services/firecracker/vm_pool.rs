@@ -19,4 +19,9 @@ impl VmPool {
         let mut pool = self.pool.lock().unwrap();
         pool.insert(project_id, vm_id);
     }
+
+    pub fn get_from_pool(&self, project_id: Uuid) -> Option<u32> {
+        let pool = self.pool.lock().unwrap();
+        pool.get(&project_id).copied()
+    }
 }
