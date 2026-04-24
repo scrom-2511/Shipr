@@ -76,22 +76,6 @@ impl ServeCore {
         headers
     }
 
-    async fn proxy_request(
-        &self,
-        req: HttpRequest,
-        body: web::Bytes,
-    ) -> Result<HttpResponse, AppError> {
-        let (project_id, target_path, query) = self.extract_project_and_path(&req)?;
-
-        let vm_id = self.get_or_create_vm(project_id).await?;
-
-        let target_url = self.build_target_url(vm_id, &target_path, &query);
-
-        let resp = self.forward_request(&req, body, &target_url).await?;
-
-        self.build_response(resp, vm_id, project_id).await
-    }
-
     fn extract_project_and_path(
         &self,
         req: &HttpRequest,
@@ -263,6 +247,23 @@ impl ServeCore {
     ) -> Result<HttpResponse, AppError> {
         handler.proxy_request(req, body).await
     }
+
+    async fn proxy_request(
+        &self,
+        req: HttpRequest,
+        body: web::Bytes,
+    ) -> Result<HttpResponse, AppError> {
+        let (project_id, target_path, query) = self.extract_project_and_path(&req)?;
+
+        let vm_id = self.get_or_create_vm(project_id).await?;
+
+        let target_url = self.build_target_url(vm_id, &target_path, &query);
+
+        let resp = self.forward_request(&req, body, &target_url).await?;
+
+        self.build_response(resp, vm_id, project_id).await
+    }
+
     pub async fn serve(
         &self,
         project_id: Uuid,
