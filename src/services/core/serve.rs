@@ -1,3 +1,4 @@
+use std::thread::spawn;
 use std::time::Duration;
 
 use crate::services::firecracker::vm_pool::VmPool;
@@ -18,7 +19,12 @@ impl ServeCore {
         Self {}
     }
 
-    async fn wait_for_port(vm_ip: u32, port: u16, max_wait: Duration) -> Result<(), AppError> {
+    async fn wait_for_port(
+        &self,
+        vm_ip: u32,
+        port: u16,
+        max_wait: Duration,
+    ) -> Result<(), AppError> {
         let addr = format!("172.16.0.{}:{}", vm_ip, port);
         let deadline = tokio::time::Instant::now() + max_wait;
 
@@ -53,8 +59,7 @@ impl ServeCore {
                 return Err(AppError::UnknownProjectType);
             }
             _ => {
-                let mut new_vm = Firecracker::new(vm_id, ProjectType::Node);
-                new_vm.create_vm().await?;
+                let new_vm = Firecracker::new(vm_id, ProjectType::Node);
                 vm_pool.add_to_pool(project_id, vm_id);
 
                 let copy_dist_dir_to_microvm = format!(
@@ -64,13 +69,18 @@ impl ServeCore {
                     project_id
                 );
 
+                run_script(vec![&copy_dist_dir_to_microvm])?;
+
                 let run_script_final = run_script_vm.join(" && ");
 
-                run_script(vec![&copy_dist_dir_to_microvm])?;
-                new_vm.execute_command(&run_script_final).await?;
+                println!("Executing cmd {}", run_script_final);
 
-                // Wait until npx serve is actually listening before returning
-                Self::wait_for_port(vm_id + 2, 3000, Duration::from_secs(30)).await?;
+                spawn(move || new_vm.execute_command(&run_script_final));
+
+                println!("Executing cmd done");
+
+                self.wait_for_port(vm_id + 2, 3000, Duration::from_secs(30))
+                    .await?;
             }
         }
         Ok(())
