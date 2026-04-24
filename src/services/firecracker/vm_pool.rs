@@ -31,4 +31,9 @@ impl VmPool {
         let mut ideal_vms = self.ideal_vms.lock().unwrap();
         ideal_vms.push(vm_id);
     }
+
+    pub fn get_from_ideal_vms(&self) -> Option<u32> {
+        let mut ideal_vms = self.ideal_vms.lock().unwrap();
+        ideal_vms.pop()
+    }
 }
