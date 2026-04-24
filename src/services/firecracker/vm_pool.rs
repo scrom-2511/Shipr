@@ -14,4 +14,9 @@ impl VmPool {
             pool: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+
+    pub fn add_to_pool(&self, project_id: Uuid, vm_id: u32) {
+        let mut pool = self.pool.lock().unwrap();
+        pool.insert(project_id, vm_id);
+    }
 }
