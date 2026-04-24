@@ -27,6 +27,11 @@ impl VmPool {
         pool.get(&project_id).copied()
     }
 
+    pub fn remove_from_pool(&self, project_id: Uuid) {
+        let mut pool = self.pool.lock().unwrap();
+        pool.remove(&project_id);
+    }
+
     pub fn add_to_ideal_vms(&self, vm_id: u32) {
         let mut ideal_vms = self.ideal_vms.lock().unwrap();
         ideal_vms.push(vm_id);
