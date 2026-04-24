@@ -5,6 +5,7 @@ use crate::app_errors::AppError;
 
 const MAX_IDS: usize = 64;
 
+#[derive(Clone)]
 pub struct UniqueIdAllocator {
     current_ids: Arc<Mutex<HashSet<usize>>>,
 }
