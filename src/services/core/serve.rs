@@ -1,6 +1,3 @@
-use std::thread::spawn;
-use std::time::Duration;
-
 use crate::services::firecracker::unique_id_allocator::UniqueIdAllocator;
 use crate::services::firecracker::vm_pool::VmPool;
 use crate::utils::run_script::run_script;
@@ -9,12 +6,16 @@ use crate::{
     services::firecracker::firecracker::Firecracker,
     utils::detect_project_type::{ProjectType, detect_project_type},
 };
-use actix_web::web::Bytes;
+use actix_web::http::Uri;
 use actix_web::{HttpRequest, HttpResponse, web};
-use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::{Client, Method};
+use std::str::FromStr;
+use std::thread::spawn;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::task;
+use url::Url;
 use uuid::Uuid;
 
 pub struct ServeCore {
@@ -28,10 +29,7 @@ impl ServeCore {
         vm_pool: web::Data<VmPool>,
         id_allocator: web::Data<UniqueIdAllocator>,
     ) -> Result<Self, AppError> {
-        let client = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|e| AppError::HttpClientBuildFailed(e.to_string()))?;
+        let client = Client::new();
 
         Ok(Self {
             vm_pool,
@@ -66,44 +64,34 @@ impl ServeCore {
         }
     }
 
-    fn convert_headers(&self, actix_headers: &actix_web::http::header::HeaderMap) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        for (name, value) in actix_headers {
-            let name = HeaderName::from_bytes(name.as_str().as_bytes()).unwrap();
-            let value = HeaderValue::from_bytes(value.as_bytes()).unwrap();
-            headers.insert(name, value);
-        }
-        headers
-    }
+    fn extract_project_and_path(&self, req: &HttpRequest) -> Result<(Uuid, Uri), AppError> {
+        println!("req: {}", req.uri());
+        let host = req.connection_info().host().to_string();
+        println!("host: {}", host);
 
-    fn extract_project_and_path(
-        &self,
-        req: &HttpRequest,
-    ) -> Result<(Uuid, String, String), AppError> {
-        let path = req.uri().to_string();
-        let path = path.strip_prefix("/").unwrap_or("");
+        let uri_with_project_id = req.uri().to_string();
 
-        let mut parts = path.splitn(2, '/');
+        let uri_without_slash = uri_with_project_id.strip_prefix("/").unwrap();
 
-        let project_id = parts.next().unwrap_or("");
-        let project_id = Uuid::parse_str(project_id).map_err(|_| AppError::InvalidProjectId)?;
+        let mut split = uri_without_slash.splitn(2, "/");
 
-        println!("Project ID: {}", project_id);
+        let project_id = split.next().unwrap();
+        println!("project_id: {}", project_id);
 
-        let remaining = parts.next().unwrap_or("");
-        let target_path = if remaining.is_empty() {
-            "".to_string()
-        } else {
-            remaining.to_string()
+        let uri_str = split.next().unwrap_or("");
+
+        let uri = Uri::from_str(format!("/{}", uri_str).as_str()).unwrap();
+        println!("uri: {}", uri);
+
+        let project_id = match uuid::Uuid::parse_str(project_id) {
+            Ok(id) => id,
+            Err(_) => {
+                return Err(AppError::InvalidProjectId(project_id.to_string()));
+            }
         };
+        println!("project_id: {}", project_id);
 
-        let query = req
-            .uri()
-            .query()
-            .map(|q| format!("?{}", q))
-            .unwrap_or_default();
-
-        Ok((project_id, target_path, query))
+        Ok((project_id, uri))
     }
 
     async fn get_or_create_vm(&self, project_id: Uuid) -> Result<u32, AppError> {
@@ -135,117 +123,66 @@ impl ServeCore {
         }
     }
 
-    fn build_target_url(&self, vm_id: u32, target_path: &str, query: &str) -> String {
-        let url = format!(
-            "http://172.16.0.{}:3000/{}{}",
-            vm_id + 2,
-            target_path,
-            query
-        );
-
-        println!("Target URL: {}", url);
-        url
+    fn build_target_url(&self, vm_id: u32, uri: Uri) -> Url {
+        let path = uri.path().trim_start_matches('/');
+        let target_url_str = format!("http://172.16.0.{}:3000/{}", vm_id + 2, path);
+        Url::from_str(&target_url_str).unwrap()
     }
 
     async fn forward_request(
         &self,
         req: &HttpRequest,
         body: web::Bytes,
-        target_url: &str,
-    ) -> Result<reqwest::Response, AppError> {
+        target_url: Url,
+    ) -> HttpResponse {
         let method = req
             .method()
             .as_str()
-            .parse::<reqwest::Method>()
-            .map_err(|e| AppError::MethodConversionFailed(e.to_string()))?;
+            .parse::<Method>()
+            .unwrap_or(Method::GET);
 
-        let headers = self.convert_headers(req.headers());
+        let mut forward_req = self.client.request(method, target_url);
 
-        let resp = self
-            .client
-            .request(method, target_url)
-            .headers(headers)
-            .body(body.to_vec())
-            .send()
-            .await
-            .map_err(|e| AppError::RequestForwardingFailed(e.to_string()))?;
-
-        Ok(resp)
-    }
-
-    async fn build_response(
-        &self,
-        resp: reqwest::Response,
-        vm_id: u32,
-        project_id: Uuid,
-    ) -> Result<HttpResponse, AppError> {
-        let status = resp.status();
-        let resp_headers = resp.headers().clone();
-
-        let mut response_builder = HttpResponse::build(
-            status
-                .as_u16()
-                .try_into()
-                .unwrap_or(actix_web::http::StatusCode::OK),
-        );
-
-        // Header rewriting
-        for (name, value) in &resp_headers {
-            if name == reqwest::header::LOCATION {
-                if let Ok(loc) = value.to_str() {
-                    let rewritten = loc.replace(
-                        &format!("http://172.16.0.{}:3000", vm_id + 2),
-                        &format!("http://127.0.0.1:8080/{}", project_id),
-                    );
-                    response_builder.insert_header((name.as_str(), rewritten));
-                    continue;
+        for (name, value) in req.headers().iter() {
+            if let Ok(header_name) = HeaderName::from_bytes(name.as_str().as_bytes()) {
+                if let Ok(header_value) = HeaderValue::from_bytes(value.as_bytes()) {
+                    forward_req = forward_req.header(header_name, header_value);
                 }
             }
-            response_builder.insert_header((name.as_str(), value.as_bytes()));
         }
 
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AppError::ResponseReadFailed(e.to_string()))?;
+        let resp = forward_req.body(body).send().await;
 
-        let content_type = resp_headers
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+        match resp {
+            Ok(upstream) => {
+                let status = actix_web::http::StatusCode::from_u16(upstream.status().as_u16())
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
 
-        let final_bytes = if content_type.contains("text/html") {
-            self.rewrite_html(bytes, project_id)
-        } else {
-            bytes.to_vec()
-        };
+                let mut response = HttpResponse::build(status);
 
-        Ok(response_builder.body(final_bytes))
-    }
+                for (name, value) in upstream.headers().iter() {
+                    if let Ok(value_str) = value.to_str() {
+                        response.insert_header((name.as_str(), value_str));
+                    }
+                }
 
-    fn rewrite_html(&self, bytes: Bytes, project_id: Uuid) -> Vec<u8> {
-        let html = String::from_utf8_lossy(&bytes);
-
-        let strip_prefix_script = format!(
-            r#"<script>(function(){{var p=window.location.pathname;var prefix='/{0}';if(p.startsWith(prefix)){{var newPath=p.slice(prefix.length)||'/';history.replaceState(null,'',newPath+window.location.search+window.location.hash);}}}})();</script>"#,
-            project_id
-        );
-
-        let rewritten = html
-            .replace("src=\"/", &format!("src=\"/{}/", project_id))
-            .replace("href=\"/", &format!("href=\"/{}/", project_id))
-            .replace("<head>", &format!("<head>{}", strip_prefix_script));
-
-        rewritten.into_bytes()
+                match upstream.bytes().await {
+                    Ok(bytes) => response.body(bytes),
+                    Err(_) => {
+                        HttpResponse::InternalServerError().body("Failed to read upstream body")
+                    }
+                }
+            }
+            Err(_) => HttpResponse::BadGateway().body("Upstream request failed"),
+        }
     }
 
     pub async fn proxy_entry(
-        handler: web::Data<ServeCore>,
+        &self,
         req: HttpRequest,
         body: web::Bytes,
     ) -> Result<HttpResponse, AppError> {
-        handler.proxy_request(req, body).await
+        self.proxy_request(req, body).await
     }
 
     async fn proxy_request(
@@ -253,15 +190,18 @@ impl ServeCore {
         req: HttpRequest,
         body: web::Bytes,
     ) -> Result<HttpResponse, AppError> {
-        let (project_id, target_path, query) = self.extract_project_and_path(&req)?;
+        let (project_id, target_path) = self.extract_project_and_path(&req)?;
 
         let vm_id = self.get_or_create_vm(project_id).await?;
 
-        let target_url = self.build_target_url(vm_id, &target_path, &query);
+        self.get_or_create_vm(project_id).await?;
 
-        let resp = self.forward_request(&req, body, &target_url).await?;
+        let target_url = self.build_target_url(vm_id, target_path);
+        println!("target_url: {}", target_url);
 
-        self.build_response(resp, vm_id, project_id).await
+        let resp = self.forward_request(&req, body, target_url).await;
+
+        Ok(resp)
     }
 
     pub async fn serve(
@@ -304,18 +244,18 @@ impl ServeCore {
             }
         }
 
-        let id_allocator = id_allocator.clone();
-        let vm_pool = vm_pool.clone();
+        // let id_allocator = id_allocator.clone();
+        // let vm_pool = vm_pool.clone();
 
-        task::spawn(async move {
-            let new_id = id_allocator.allocate_id().await? as u32;
-            let mut new_vm = Firecracker::new(new_id, ProjectType::Node);
+        // task::spawn(async move {
+        //     let new_id = id_allocator.allocate_id().await? as u32;
+        //     let mut new_vm = Firecracker::new(new_id, ProjectType::Node);
 
-            new_vm.create_vm().await?;
-            vm_pool.add_to_ideal_vms(new_id);
+        //     new_vm.create_vm().await?;
+        //     vm_pool.add_to_ideal_vms(new_id);
 
-            Ok::<(), AppError>(())
-        });
+        //     Ok::<(), AppError>(())
+        // });
 
         Ok(())
     }
