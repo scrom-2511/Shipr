@@ -65,31 +65,16 @@ impl ServeCore {
     }
 
     fn extract_project_and_path(&self, req: &HttpRequest) -> Result<(Uuid, Uri), AppError> {
-        println!("req: {}", req.uri());
         let host = req.connection_info().host().to_string();
-        println!("host: {}", host);
 
-        let uri_with_project_id = req.uri().to_string();
+        let uri = req.uri().to_owned();
 
-        let uri_without_slash = uri_with_project_id.strip_prefix("/").unwrap();
-
-        let mut split = uri_without_slash.splitn(2, "/");
-
-        let project_id = split.next().unwrap();
-        println!("project_id: {}", project_id);
-
-        let uri_str = split.next().unwrap_or("");
-
-        let uri = Uri::from_str(format!("/{}", uri_str).as_str()).unwrap();
-        println!("uri: {}", uri);
-
-        let project_id = match uuid::Uuid::parse_str(project_id) {
-            Ok(id) => id,
-            Err(_) => {
-                return Err(AppError::InvalidProjectId(project_id.to_string()));
-            }
-        };
-        println!("project_id: {}", project_id);
+        let project_id = host
+            .split(".")
+            .next()
+            .unwrap()
+            .parse::<Uuid>()
+            .map_err(|e| AppError::InvalidProjectId(e.to_string()))?;
 
         Ok((project_id, uri))
     }
@@ -177,15 +162,7 @@ impl ServeCore {
         }
     }
 
-    pub async fn proxy_entry(
-        &self,
-        req: HttpRequest,
-        body: web::Bytes,
-    ) -> Result<HttpResponse, AppError> {
-        self.proxy_request(req, body).await
-    }
-
-    async fn proxy_request(
+    pub async fn proxy_request(
         &self,
         req: HttpRequest,
         body: web::Bytes,
