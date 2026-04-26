@@ -29,6 +29,9 @@ pub enum AppError {
     #[error("Failed to start firecracker: {0}")]
     StartingFirecrackerFailed(String),
 
+    #[error("VM not ready")]
+    VmNotReady,
+
     #[error("Unknown project type")]
     UnknownProjectType,
 
@@ -41,8 +44,8 @@ pub enum AppError {
     #[error("HTTP client build failed: {0}")]
     HttpClientBuildFailed(String),
 
-    #[error("Invalid project id")]
-    InvalidProjectId,
+    #[error("Invalid project id: {0}")]
+    InvalidProjectId(String),
 
     #[error("VM provisioning failed: {0}")]
     VmProvisioningFailed(String),
@@ -55,6 +58,9 @@ pub enum AppError {
 
     #[error("Method conversion failed: {0}")]
     MethodConversionFailed(String),
+
+    #[error("No available VM")]
+    NoAvailableVm,
 }
 
 impl ResponseError for AppError {
