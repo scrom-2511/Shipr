@@ -1,16 +1,23 @@
-use crate::{app_errors::AppError, utils::run_script::run_script};
-use std::{process::Command, thread::sleep, time::Duration};
+use crate::{
+    app_errors::AppError,
+    utils::{detect_project_type::ProjectType, run_script::run_script},
+};
+use std::{
+    process::{Command, Stdio},
+    thread::sleep,
+    time::Duration,
+};
 
 pub struct Firecracker {
     api_socket: String,
     unique_id: u32,
     client: reqwest::Client,
     base_id: u32,
-    lang: String,
+    lang: ProjectType,
 }
 
 impl Firecracker {
-    pub fn new(unique_id: u32, lang: String) -> Self {
+    pub fn new(unique_id: u32, lang: ProjectType) -> Self {
         let api_socket = format!("/tmp/firecracker-{}.socket", unique_id);
 
         let path: &str = api_socket.as_ref();
@@ -31,6 +38,10 @@ impl Firecracker {
         }
     }
 
+    pub fn get_base_id(&self) -> u32 {
+        self.unique_id
+    }
+
     fn init_vm(&mut self) -> Result<(), AppError> {
         let cmd_1 = format!(r#"sudo rm -f {}"#, self.api_socket);
         let cmd_2 = format!(
@@ -40,14 +51,17 @@ impl Firecracker {
 
         run_script(vec![&cmd_1])?;
 
-        let mut child = Command::new("bash")
+        Command::new("bash")
             .arg("-c")
             .arg(cmd_2)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .current_dir("/home/scrom")
             .spawn()
             .map_err(|e| AppError::StartingFirecrackerFailed(e.to_string()))?;
 
         let path: &str = self.api_socket.as_ref();
+
         self.client = reqwest::Client::builder()
             .unix_socket(path)
             .build()
@@ -111,7 +125,7 @@ impl Firecracker {
     }
 
     async fn set_rootfs(&self) -> Result<(), AppError> {
-        let rootfs_path = format!("rootfs-{}.ext4", self.lang);
+        let rootfs_path = format!("rootfs-nodejs.ext4");
         println!("rootfs_path: {}", rootfs_path);
         let copy_rootfs = format!(r#"cp {} rootfs-{}.ext4"#, rootfs_path, self.unique_id);
 
@@ -179,7 +193,7 @@ impl Firecracker {
         Ok(())
     }
 
-    pub async fn execute_command(&self, command: &str) -> Result<(), AppError> {
+    pub fn execute_command(&self, command: &str) -> Result<(), AppError> {
         let cmd = format!(
             r#"ssh -t -i ubuntu.id_rsa root@172.16.0.{} 'bash -i -c "{}"'"#,
             self.base_id + 2,
@@ -192,16 +206,14 @@ impl Firecracker {
     }
 
     async fn setup_ssh(&self) -> Result<(), AppError> {
-        self.execute_command("ip route add default via 172.16.0.1 dev eth0")
-            .await?;
-        self.execute_command("echo 'nameserver 8.8.8.8' > /etc/resolv.conf")
-            .await?;
+        self.execute_command("ip route add default via 172.16.0.1 dev eth0")?;
+        self.execute_command("echo 'nameserver 8.8.8.8' > /etc/resolv.conf")?;
 
         Ok(())
     }
 
     pub async fn destroy_vm(&self) -> Result<(), AppError> {
-        self.execute_command("reboot").await?;
+        self.execute_command("reboot")?;
         let cmd_1 = format!(
             r#"sudo ip link del tap{} 2> /dev/null || true"#,
             self.unique_id
@@ -246,6 +258,8 @@ impl Firecracker {
         self.set_network_interface().await?;
         self.start_instance().await?;
         self.setup_ssh().await?;
+
+        println!("VM created successfully");
 
         Ok(())
     }
