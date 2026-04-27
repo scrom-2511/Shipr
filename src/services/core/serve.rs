@@ -18,17 +18,15 @@ use tokio::task;
 use url::Url;
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct ServeCore {
-    vm_pool: web::Data<VmPool>,
-    id_allocator: web::Data<UniqueIdAllocator>,
+    vm_pool: VmPool,
+    id_allocator: UniqueIdAllocator,
     client: Client,
 }
 
 impl ServeCore {
-    pub fn new(
-        vm_pool: web::Data<VmPool>,
-        id_allocator: web::Data<UniqueIdAllocator>,
-    ) -> Result<Self, AppError> {
+    pub fn new(vm_pool: VmPool, id_allocator: UniqueIdAllocator) -> Result<Self, AppError> {
         let client = Client::new();
 
         Ok(Self {
@@ -186,8 +184,8 @@ impl ServeCore {
         project_id: Uuid,
         vm_id: u32,
         run_script_vm: Vec<String>,
-        vm_pool: web::Data<VmPool>,
-        id_allocator: web::Data<UniqueIdAllocator>,
+        vm_pool: VmPool,
+        id_allocator: UniqueIdAllocator,
     ) -> Result<(), AppError> {
         let project_type = detect_project_type(&project_id.to_string());
 

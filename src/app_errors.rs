@@ -2,6 +2,9 @@ use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
     #[error("Lapin error: {0}")]
     LapinError(String),
 
@@ -61,6 +64,9 @@ pub enum AppError {
 
     #[error("No available VM")]
     NoAvailableVm,
+
+    #[error("Starting server failed: {0}")]
+    StartingServerFailed(String),
 }
 
 impl ResponseError for AppError {

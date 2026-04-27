@@ -49,11 +49,15 @@ impl PullBuildCore {
 
         self.git_url_validator(git_url)?;
 
+        let vm = self.vm.as_ref().unwrap();
+
         let repo_name = self
             .extract_repo_name(git_url)
             .ok_or(AppError::InvalidGitUrl)?;
 
         let git_clone_cmd = format!("git clone {}", git_url);
+
+        vm.execute_command(&git_clone_cmd)?;
 
         let install_cmd = deploy_details.install_commands.join(" && ");
 
@@ -62,9 +66,6 @@ impl PullBuildCore {
             repo_name, deploy_details.home_dir, install_cmd
         );
 
-        let vm = self.vm.as_ref().unwrap();
-
-        vm.execute_command(&git_clone_cmd)?;
         vm.execute_command(&final_install_cmd)?;
 
         Ok(())

@@ -3,7 +3,7 @@ use std::process::Command;
 
 pub fn run_script(script: Vec<&str>) -> Result<(), AppError> {
     for cmd in script {
-        let output = Command::new("bash")
+        Command::new("bash")
             .arg("-c")
             .arg(cmd)
             .current_dir("/home/scrom")
