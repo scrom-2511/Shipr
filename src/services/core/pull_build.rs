@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::PathBuf;
+
 use crate::services::firecracker::unique_id_allocator::UniqueIdAllocator;
 use crate::utils::detect_project_type::ProjectType;
 use crate::utils::run_script::run_script;
@@ -34,89 +37,51 @@ impl PullBuildCore {
         Ok(())
     }
 
-    fn extract_repo_name(&self, url: &str) -> Option<String> {
-        let url = url.trim();
-
-        let last_part = url.split('/').last()?;
-
-        let repo_name = last_part.strip_suffix(".git").unwrap_or(last_part);
-
-        Some(repo_name.to_string())
-    }
-
-    async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
-        let git_url = &deploy_details.url;
-
-        self.git_url_validator(git_url)?;
-
+    async fn move_json_to_vm(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
         let vm = self.vm.as_ref().unwrap();
+        vm.get_base_id();
 
-        let repo_name = self
-            .extract_repo_name(git_url)
-            .ok_or(AppError::InvalidGitUrl)?;
+        let job_json = serde_json::to_string(deploy_details)?;
 
-        let git_clone_cmd = format!("git clone {}", git_url);
-
-        vm.execute_command(&git_clone_cmd)?;
-
-        let install_cmd = deploy_details.install_commands.join(" && ");
-
-        let final_install_cmd = format!(
-            "cd {} && cd {} && {}",
-            repo_name, deploy_details.home_dir, install_cmd
+        let job_json_path = format!(
+            "/home/scrom/shipr/job_jsons/{}.json",
+            deploy_details.unique_id
         );
 
-        vm.execute_command(&final_install_cmd)?;
+        if let Some(parent) = PathBuf::from(&job_json_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        fs::write(&job_json_path, job_json)?;
+
+        let copy_job_json_to_vm = format!(
+            "scp -r -i ubuntu.id_rsa {} root@172.16.0.{}:/root/job.json",
+            job_json_path,
+            vm.get_base_id() + 2
+        );
+
+        run_script(vec![&copy_job_json_to_vm])?;
 
         Ok(())
     }
 
-    async fn build(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
-        let repo_name = self
-            .extract_repo_name(&deploy_details.url)
-            .ok_or(AppError::InvalidGitUrl)?;
-
-        let build_cmd = deploy_details.build_commands.join(" && ");
-
-        let final_build_cmd = format!(
-            "cd {} && cd {} && {}",
-            repo_name, deploy_details.home_dir, build_cmd
-        );
-
-        let vm = self.vm.as_ref().unwrap();
-
-        vm.execute_command(&final_build_cmd)?;
-
-        let mkdir_build_dir = format!(
-            "mkdir -p /home/scrom/code/shipr/src/build/{}",
-            deploy_details.unique_id
-        );
-
-        let vm_id = vm.get_base_id();
-
-        let copy_dist_dir_to_host = format!(
-            "scp -r -i ubuntu.id_rsa root@172.16.0.{}:./{}/{} /home/scrom/code/shipr/src/build/{}",
-            vm_id + 2,
-            repo_name,
-            deploy_details.dist_dir,
-            deploy_details.unique_id
-        );
-
-        run_script(vec![&mkdir_build_dir, &copy_dist_dir_to_host])?;
-
-        vm.destroy_vm().await?;
-
-        Ok(())
-    }
-
-    pub async fn pull_build(
+    pub async fn pull_build_setup(
         &mut self,
         deploy_details: &DeployDetails,
         id_allocator: UniqueIdAllocator,
     ) -> Result<(), AppError> {
+        self.git_url_validator(&deploy_details.url)?;
         self.create_vm(id_allocator).await?;
-        self.pull(deploy_details).await?;
-        self.build(deploy_details).await?;
+        self.move_json_to_vm(deploy_details).await?;
+
+        run_script(vec![
+            "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
+        ])?;
+
+        self.vm
+            .as_ref()
+            .unwrap()
+            .execute_command("cd /root && ./worker job.json")?;
 
         Ok(())
     }

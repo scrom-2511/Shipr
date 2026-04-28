@@ -91,15 +91,15 @@ impl ServeCore {
 
                 println!("Starting VM {}", new_id);
 
-                self.serve(
-                    project_id,
-                    new_id as u32,
-                    vec![format!("cd {} && npx serve dist", project_id)],
-                    self.vm_pool.clone(),
-                    self.id_allocator.clone(),
-                )
-                .await
-                .map_err(|e| AppError::VmProvisioningFailed(e.to_string()))?;
+                // self.serve(
+                //     project_id,
+                //     new_id as u32,
+                //     vec![format!("cd {} && npx serve dist", project_id)],
+                //     self.vm_pool.clone(),
+                //     self.id_allocator.clone(),
+                // )
+                // .await
+                // .map_err(|e| AppError::VmProvisioningFailed(e.to_string()))?;
 
                 Ok(new_id as u32)
             }
@@ -179,59 +179,59 @@ impl ServeCore {
         Ok(resp)
     }
 
-    pub async fn serve(
-        &self,
-        project_id: Uuid,
-        vm_id: u32,
-        run_script_vm: Vec<String>,
-        vm_pool: VmPool,
-        id_allocator: UniqueIdAllocator,
-    ) -> Result<(), AppError> {
-        let project_type = detect_project_type(&project_id.to_string());
+    // pub async fn serve(
+    //     &self,
+    //     project_id: Uuid,
+    //     vm_id: u32,
+    //     run_script_vm: Vec<String>,
+    //     vm_pool: VmPool,
+    //     id_allocator: UniqueIdAllocator,
+    // ) -> Result<(), AppError> {
+    //     let project_type = detect_project_type(&project_id.to_string());
 
-        match project_type {
-            ProjectType::Unknown => {
-                return Err(AppError::UnknownProjectType);
-            }
-            _ => {
-                let new_vm = Firecracker::new(vm_id, ProjectType::Node);
-                vm_pool.add_to_pool(project_id, vm_id);
+    //     match project_type {
+    //         ProjectType::Unknown => {
+    //             return Err(AppError::UnknownProjectType);
+    //         }
+    //         _ => {
+    //             let new_vm = Firecracker::new(vm_id, ProjectType::Node);
+    //             vm_pool.add_to_pool(project_id, vm_id);
 
-                let copy_dist_dir_to_microvm = format!(
-                    "scp -r -i ubuntu.id_rsa /home/scrom/code/shipr/build/{} root@172.16.0.{}:/root/{}",
-                    project_id,
-                    vm_id + 2,
-                    project_id
-                );
+    //             let copy_dist_dir_to_microvm = format!(
+    //                 "scp -r -i ubuntu.id_rsa /home/scrom/code/shipr/build/{} root@172.16.0.{}:/root/{}",
+    //                 project_id,
+    //                 vm_id + 2,
+    //                 project_id
+    //             );
 
-                run_script(vec![&copy_dist_dir_to_microvm])?;
+    //             run_script(vec![&copy_dist_dir_to_microvm])?;
 
-                let run_script_final = run_script_vm.join(" && ");
+    //             let run_script_final = run_script_vm.join(" && ");
 
-                println!("Executing cmd {}", run_script_final);
+    //             println!("Executing cmd {}", run_script_final);
 
-                spawn(move || new_vm.execute_command(&run_script_final));
+    //             spawn(move || new_vm.execute_command(&run_script_final));
 
-                println!("Executing cmd done");
+    //             println!("Executing cmd done");
 
-                self.wait_for_port(vm_id + 2, 3000, Duration::from_secs(30))
-                    .await?;
-            }
-        }
+    //             self.wait_for_port(vm_id + 2, 3000, Duration::from_secs(30))
+    //                 .await?;
+    //         }
+    //     }
 
-        // let id_allocator = id_allocator.clone();
-        // let vm_pool = vm_pool.clone();
+    //     // let id_allocator = id_allocator.clone();
+    //     // let vm_pool = vm_pool.clone();
 
-        // task::spawn(async move {
-        //     let new_id = id_allocator.allocate_id().await? as u32;
-        //     let mut new_vm = Firecracker::new(new_id, ProjectType::Node);
+    //     // task::spawn(async move {
+    //     //     let new_id = id_allocator.allocate_id().await? as u32;
+    //     //     let mut new_vm = Firecracker::new(new_id, ProjectType::Node);
 
-        //     new_vm.create_vm().await?;
-        //     vm_pool.add_to_ideal_vms(new_id);
+    //     //     new_vm.create_vm().await?;
+    //     //     vm_pool.add_to_ideal_vms(new_id);
 
-        //     Ok::<(), AppError>(())
-        // });
+    //     //     Ok::<(), AppError>(())
+    //     // });
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }

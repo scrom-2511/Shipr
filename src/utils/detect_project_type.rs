@@ -22,13 +22,10 @@ impl fmt::Display for ProjectType {
     }
 }
 
-pub fn detect_project_type(folder_id: &str) -> ProjectType {
-    let cwd = env::current_dir().unwrap();
-    let path = cwd.join(format!("build/{}", folder_id));
-
-    let html_path = path.join("dist/index.html");
-    let package_json_path = path.join("package.json");
-    let cargo_toml_path = path.join("Cargo.toml");
+pub fn detect_project_type(path: &str) -> ProjectType {
+    let html_path = format!("{}/dist/index.html", path);
+    let package_json_path = format!("{}/package.json", path);
+    let cargo_toml_path = format!("{}/Cargo.toml", path);
 
     if Path::new(&html_path).exists() {
         return ProjectType::Html;

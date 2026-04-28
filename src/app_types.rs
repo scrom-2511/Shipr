@@ -10,4 +10,5 @@ pub struct DeployDetails {
     pub unique_id: Uuid,
     pub home_dir: String,
     pub dist_dir: String,
+    pub presigned_url: String,
 }

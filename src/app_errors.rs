@@ -1,9 +1,21 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
+use aws_sdk_s3::{
+    error::SdkError, operation::put_object::PutObjectError, presigning::PresigningConfigError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("S3 presigning error: {0}")]
+    Presigning(#[from] PresigningConfigError),
+
+    #[error("S3 SDK error: {0}")]
+    Sdk(#[from] SdkError<PutObjectError>),
+
+    #[error("serde json error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
 
     #[error("Lapin error: {0}")]
     LapinError(String),
