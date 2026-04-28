@@ -1,6 +1,6 @@
 use std::fs;
 
-use shipr::{app_types::DeployDetails, worker::pull_build::PullBuildWorker};
+use shipr::{app_types::DeployDetails, worker::job_executer::PullBuildWorker};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

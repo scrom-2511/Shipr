@@ -1,19 +1,20 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::services::firecracker::unique_id_allocator::UniqueIdAllocator;
-use crate::utils::detect_project_type::ProjectType;
-use crate::utils::run_script::run_script;
-use crate::{
-    app_errors::AppError, app_types::DeployDetails, services::firecracker::firecracker::Firecracker,
-};
 use url::Url;
 
-pub struct PullBuildCore {
+use crate::app_errors::AppError;
+use crate::app_types::DeployDetails;
+use crate::controller::vm::firecracker::Firecracker;
+use crate::controller::vm::id_allocator::IdAllocator;
+use crate::infra::detect::ProjectType;
+use crate::infra::process::run_script;
+
+pub struct JobDispatcher {
     vm: Option<Firecracker>,
 }
 
-impl PullBuildCore {
+impl JobDispatcher {
     pub fn new() -> Self {
         Self { vm: None }
     }
@@ -28,7 +29,7 @@ impl PullBuildCore {
         Err(AppError::InvalidGitUrl)
     }
 
-    async fn create_vm(&mut self, id_allocator: UniqueIdAllocator) -> Result<(), AppError> {
+    async fn create_vm(&mut self, id_allocator: IdAllocator) -> Result<(), AppError> {
         let vm_id = id_allocator.allocate_id().await?;
         let mut new_vm = Firecracker::new(vm_id as u32, ProjectType::Node);
         new_vm.create_vm().await?;
@@ -65,10 +66,10 @@ impl PullBuildCore {
         Ok(())
     }
 
-    pub async fn pull_build_setup(
+    pub async fn dispatch_job(
         &mut self,
         deploy_details: &DeployDetails,
-        id_allocator: UniqueIdAllocator,
+        id_allocator: IdAllocator,
     ) -> Result<(), AppError> {
         self.git_url_validator(&deploy_details.url)?;
         self.create_vm(id_allocator).await?;

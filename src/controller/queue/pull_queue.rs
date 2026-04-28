@@ -1,19 +1,19 @@
-use futures::stream::StreamExt;
+use futures::{StreamExt, channel};
 use lapin::{
     Channel, Connection, Queue,
     options::BasicAckOptions,
     types::{AMQPValue, FieldTable, LongString, ShortString},
 };
 
-use crate::{app_errors::AppError, app_types::DeployDetails, services::lapin::lapin::Lapin};
+use crate::{app_errors::AppError, app_types::DeployDetails, controller::queue::lapin::Lapin};
 
-struct BuildQueue<'a> {
+pub struct PullQueue<'a> {
     connection: &'a Connection,
     channel: Channel,
     queue: Queue,
 }
 
-impl<'a> BuildQueue<'a> {
+impl<'a> PullQueue<'a> {
     pub async fn new(lapin_conn: &'a Lapin) -> Result<Self, AppError> {
         let connection = lapin_conn.get_connection().await;
 
@@ -62,12 +62,12 @@ impl<'a> BuildQueue<'a> {
         Ok(())
     }
 
-    pub async fn consume(&self, consumer_tag: &str) -> Result<(), AppError> {
+    pub async fn consume(&self) -> Result<(), AppError> {
         let mut consumer = self
             .channel
             .basic_consume(
-                ShortString::from("build_queue"),
-                ShortString::from(consumer_tag),
+                ShortString::from("pull_queue"),
+                ShortString::from("pull_queue"),
                 Default::default(),
                 Default::default(),
             )
@@ -77,9 +77,7 @@ impl<'a> BuildQueue<'a> {
         while let Some(delivery) = consumer.next().await {
             let delivery = delivery.map_err(|e| AppError::LapinError(e.to_string()))?;
 
-            let data = String::from_utf8_lossy(&delivery.data);
-
-            let data1 = serde_json::from_str::<DeployDetails>(&data)
+            let data = serde_json::from_slice::<DeployDetails>(&delivery.data)
                 .map_err(|e| AppError::LapinError(e.to_string()))?;
 
             delivery

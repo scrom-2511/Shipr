@@ -5,17 +5,13 @@ use tokio::task;
 use crate::{
     app_errors::AppError,
     app_types::DeployDetails,
-    services::{
-        core::{pull_build::PullBuildCore, serve::ServeCore},
-        firecracker::{
-            firecracker::Firecracker, unique_id_allocator::UniqueIdAllocator, vm_pool::VmPool,
-        },
-        s3::s3::S3Service,
+    controller::{
+        api::vm_request_proxy::VmRequestProxy,
+        scheduler::job_dispatcher::JobDispatcher,
+        storage::s3::S3Service,
+        vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
     },
-    utils::{
-        detect_project_type::ProjectType,
-        run_script::{self, run_script},
-    },
+    infra::detect::ProjectType,
 };
 
 #[derive(Parser)]
@@ -53,7 +49,7 @@ enum Commands {
 
 pub async fn cli(
     vm_pool: VmPool,
-    id_allocator: UniqueIdAllocator,
+    id_allocator: IdAllocator,
     s3_service: S3Service,
 ) -> Result<(), AppError> {
     let args = Cli::parse();
@@ -93,14 +89,15 @@ pub async fn cli(
 
             println!("Worker copied to VM");
 
-            let mut pull_build_core = PullBuildCore::new();
+            let mut pull_build_core = JobDispatcher::new();
             pull_build_core
-                .pull_build_setup(&deploy_details, id_allocator)
+                .dispatch_job(&deploy_details, id_allocator)
                 .await?;
         }
 
         Commands::Serve {} => {
-            let serve_core = web::Data::new(ServeCore::new(vm_pool.clone(), id_allocator.clone())?);
+            let serve_core =
+                web::Data::new(VmRequestProxy::new(vm_pool.clone(), id_allocator.clone())?);
 
             for _ in 0..1 {
                 let id_allocator = id_allocator.clone();

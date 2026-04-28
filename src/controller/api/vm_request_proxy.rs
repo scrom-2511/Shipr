@@ -1,32 +1,25 @@
-use crate::services::firecracker::unique_id_allocator::UniqueIdAllocator;
-use crate::services::firecracker::vm_pool::VmPool;
-use crate::utils::run_script::run_script;
-use crate::{
-    app_errors::AppError,
-    services::firecracker::firecracker::Firecracker,
-    utils::detect_project_type::{ProjectType, detect_project_type},
-};
+use crate::app_errors::AppError;
+use crate::controller::vm::id_allocator::IdAllocator;
+use crate::controller::vm::vm_pool::VmPool;
 use actix_web::http::Uri;
 use actix_web::{HttpRequest, HttpResponse, web};
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Client, Method};
 use std::str::FromStr;
-use std::thread::spawn;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::task;
 use url::Url;
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct ServeCore {
+pub struct VmRequestProxy {
     vm_pool: VmPool,
-    id_allocator: UniqueIdAllocator,
+    id_allocator: IdAllocator,
     client: Client,
 }
 
-impl ServeCore {
-    pub fn new(vm_pool: VmPool, id_allocator: UniqueIdAllocator) -> Result<Self, AppError> {
+impl VmRequestProxy {
+    pub fn new(vm_pool: VmPool, id_allocator: IdAllocator) -> Result<Self, AppError> {
         let client = Client::new();
 
         Ok(Self {

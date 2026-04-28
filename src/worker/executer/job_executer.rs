@@ -2,7 +2,7 @@ use crate::{
     app_errors::AppError,
     app_types::DeployDetails,
     config::project_default_config::get_default_config,
-    utils::{detect_project_type::detect_project_type, run_script::run_script_vm},
+    infra::{detect::detect_project_type, process::run_script_vm},
 };
 
 pub struct PullBuildWorker;
