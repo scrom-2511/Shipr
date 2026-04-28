@@ -112,4 +112,12 @@ impl PullBuildWorker {
 
         Ok(())
     }
+
+    pub async fn pull_build(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        self.pull(deploy_details).await?;
+        self.install(deploy_details).await?;
+        self.build(deploy_details).await?;
+
+        Ok(())
+    }
 }
