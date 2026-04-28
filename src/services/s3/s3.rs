@@ -25,4 +25,16 @@ impl S3Service {
             bucket: String::from("shipr"),
         }
     }
+
+    pub async fn get_presigned_url(&self, key: &str) -> Result<String, AppError> {
+        let presigned_req = self
+            .client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(PresigningConfig::expires_in(Duration::from_mins(10))?)
+            .await?;
+
+        Ok(presigned_req.uri().to_string())
+    }
 }
