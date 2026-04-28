@@ -5,14 +5,17 @@ use tokio::task;
 use crate::{
     app_errors::AppError,
     app_types::DeployDetails,
-    proxy,
     services::{
         core::{pull_build::PullBuildCore, serve::ServeCore},
         firecracker::{
             firecracker::Firecracker, unique_id_allocator::UniqueIdAllocator, vm_pool::VmPool,
         },
+        s3::s3::S3Service,
     },
-    utils::detect_project_type::ProjectType,
+    utils::{
+        detect_project_type::ProjectType,
+        run_script::{self, run_script},
+    },
 };
 
 #[derive(Parser)]
@@ -48,7 +51,11 @@ enum Commands {
     Serve,
 }
 
-pub async fn deploy(vm_pool: VmPool, id_allocator: UniqueIdAllocator) -> Result<(), AppError> {
+pub async fn cli(
+    vm_pool: VmPool,
+    id_allocator: UniqueIdAllocator,
+    s3_service: S3Service,
+) -> Result<(), AppError> {
     let args = Cli::parse();
 
     match args.command {
@@ -64,19 +71,31 @@ pub async fn deploy(vm_pool: VmPool, id_allocator: UniqueIdAllocator) -> Result<
             println!("Install: {:?}", install);
             println!("Build: {:?}", build);
 
+            let unique_id = uuid::Uuid::new_v4();
+            println!("Unique ID: {}", unique_id);
+
+            let presigned_url = s3_service
+                .get_presigned_url(format!("{}.zip", unique_id).as_str())
+                .await?;
+
+            println!("Presigned URL: {}", presigned_url);
+
             let deploy_details = DeployDetails {
                 url,
                 install_commands: install,
                 build_commands: build,
                 branch,
-                unique_id: uuid::Uuid::new_v4(),
+                unique_id,
                 home_dir,
                 dist_dir,
+                presigned_url,
             };
+
+            println!("Worker copied to VM");
 
             let mut pull_build_core = PullBuildCore::new();
             pull_build_core
-                .pull_build(&deploy_details, id_allocator)
+                .pull_build_setup(&deploy_details, id_allocator)
                 .await?;
         }
 
@@ -101,9 +120,8 @@ pub async fn deploy(vm_pool: VmPool, id_allocator: UniqueIdAllocator) -> Result<
             println!("Starting server");
 
             HttpServer::new(move || {
-                App::new()
-                    .app_data(serve_core.clone())
-                    .default_service(web::to(proxy))
+                App::new().app_data(serve_core.clone())
+                // .default_service(web::to(proxy))
             })
             .bind(("127.0.0.1", 8080))?
             .run()
