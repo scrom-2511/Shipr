@@ -21,4 +21,14 @@ impl PullBuildWorker {
 
         Ok(repo_name.to_string())
     }
+
+    fn get_project_path(&self, deploy_details: &DeployDetails) -> Result<String, AppError> {
+        let repo_name = self.extract_repo_name(&deploy_details.url)?;
+
+        if deploy_details.home_dir.is_empty() {
+            Ok(format!("/root/{}", repo_name))
+        } else {
+            Ok(format!("/root/{}/{}", repo_name, deploy_details.home_dir))
+        }
+    }
 }
