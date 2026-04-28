@@ -65,4 +65,51 @@ impl PullBuildWorker {
 
         Ok(())
     }
+
+    async fn build(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        let project_path = self.get_project_path(deploy_details)?;
+        println!("{}", project_path);
+
+        if !deploy_details.build_commands.is_empty() {
+            let build_cmd = deploy_details.build_commands.join(" && ");
+
+            let final_cmd = format!("cd {} && {}", project_path, build_cmd);
+
+            run_script_vm(vec![&final_cmd])?;
+            return Ok(());
+        }
+
+        let project_type = detect_project_type(&project_path);
+        let config = get_default_config(project_type);
+
+        let final_cmd = format!(
+            "cd {} && {}",
+            project_path,
+            config.build_commands.join(" && ")
+        );
+
+        run_script_vm(vec![&final_cmd])?;
+
+        let zip_cmd = format!(
+            "zip -r {}.zip {}/{}",
+            "dist",
+            self.extract_repo_name(&deploy_details.url)?,
+            deploy_details.dist_dir
+        );
+
+        println!("{}", zip_cmd);
+
+        run_script_vm(vec![&zip_cmd])?;
+
+        let upload_cmd = format!(
+            "curl -X PUT -T {}.zip '{}'",
+            "dist", deploy_details.presigned_url
+        );
+
+        println!("{}", upload_cmd);
+
+        run_script_vm(vec![&upload_cmd])?;
+
+        Ok(())
+    }
 }
