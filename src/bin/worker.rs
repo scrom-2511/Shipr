@@ -1,6 +1,6 @@
 use std::fs;
 
-use shipr::{app_types::DeployDetails, worker::job_executer::PullBuildWorker};
+use shipr::{app_types::DeployDetails, worker::executer::job_executer::JobExecuter};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,11 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let deploy_details = serde_json::from_str::<DeployDetails>(&content).unwrap();
 
-    let worker = PullBuildWorker::new();
+    let worker = JobExecuter::new();
 
-    worker.pull_build(&deploy_details).await?;
+    worker.execute(&deploy_details).await?;
 
-    println!("✅ Build and upload completed");
+    println!("Build and upload completed");
 
     Ok(())
 }

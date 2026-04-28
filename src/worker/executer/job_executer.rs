@@ -5,9 +5,9 @@ use crate::{
     infra::{detect::detect_project_type, process::run_script_vm},
 };
 
-pub struct PullBuildWorker;
+pub struct JobExecuter;
 
-impl PullBuildWorker {
+impl JobExecuter {
     pub fn new() -> Self {
         Self {}
     }
@@ -113,7 +113,7 @@ impl PullBuildWorker {
         Ok(())
     }
 
-    pub async fn pull_build(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+    pub async fn execute(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
         self.pull(deploy_details).await?;
         self.install(deploy_details).await?;
         self.build(deploy_details).await?;
