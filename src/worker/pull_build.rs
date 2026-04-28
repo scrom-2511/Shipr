@@ -31,4 +31,12 @@ impl PullBuildWorker {
             Ok(format!("/root/{}/{}", repo_name, deploy_details.home_dir))
         }
     }
+
+    async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        let git_clone_cmd = format!("cd /root && git clone {}", deploy_details.url);
+
+        run_script_vm(vec![&git_clone_cmd])?;
+
+        Ok(())
+    }
 }
