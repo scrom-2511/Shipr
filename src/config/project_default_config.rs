@@ -1,4 +1,4 @@
-use crate::infra::detect::ProjectType;
+use crate::app_types::ProjectType;
 
 pub struct ProjectDefaultConfig {
     pub install_commands: Vec<&'static str>,

@@ -1,26 +1,6 @@
-use std::{env, fmt, fs, path::Path};
+use std::{fs, path::Path};
 
-#[derive(Clone)]
-pub enum ProjectType {
-    Html,
-    Rust,
-    React,
-    Node,
-    Unknown,
-}
-
-impl fmt::Display for ProjectType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            ProjectType::Html => "html",
-            ProjectType::Rust => "rust",
-            ProjectType::React => "react",
-            ProjectType::Node => "node",
-            ProjectType::Unknown => "unknown",
-        };
-        write!(f, "{}", s)
-    }
-}
+use crate::app_types::ProjectType;
 
 pub fn detect_project_type(path: &str) -> ProjectType {
     let html_path = format!("{}/dist/index.html", path);

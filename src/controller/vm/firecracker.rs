@@ -1,7 +1,4 @@
-use crate::{
-    app_errors::AppError,
-    infra::{detect::ProjectType, process::run_script},
-};
+use crate::{app_errors::AppError, app_types::ProjectType, infra::process::run_script};
 use std::{
     process::{Command, Stdio},
     thread::sleep,

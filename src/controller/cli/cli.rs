@@ -4,14 +4,13 @@ use tokio::task;
 
 use crate::{
     app_errors::AppError,
-    app_types::DeployDetails,
+    app_types::{DeployDetails, ProjectType},
     controller::{
         api::vm_request_proxy::VmRequestProxy,
         scheduler::job_dispatcher::JobDispatcher,
         storage::s3::S3Service,
         vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
     },
-    infra::detect::ProjectType,
 };
 
 #[derive(Parser)]

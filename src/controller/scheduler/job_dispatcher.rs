@@ -4,10 +4,9 @@ use std::path::PathBuf;
 use url::Url;
 
 use crate::app_errors::AppError;
-use crate::app_types::DeployDetails;
+use crate::app_types::{DeployDetails, ProjectType};
 use crate::controller::vm::firecracker::Firecracker;
 use crate::controller::vm::id_allocator::IdAllocator;
-use crate::infra::detect::ProjectType;
 use crate::infra::process::run_script;
 
 pub struct JobDispatcher {
