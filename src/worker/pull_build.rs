@@ -39,4 +39,30 @@ impl PullBuildWorker {
 
         Ok(())
     }
+
+    async fn install(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        let project_path = self.get_project_path(deploy_details)?;
+
+        if !deploy_details.install_commands.is_empty() {
+            let install_cmd = deploy_details.install_commands.join(" && ");
+
+            let final_cmd = format!("cd {} && {}", project_path, install_cmd);
+
+            run_script_vm(vec![&final_cmd])?;
+            return Ok(());
+        }
+
+        let project_type = detect_project_type(&project_path);
+        let config = get_default_config(project_type);
+
+        let final_cmd = format!(
+            "cd {} && {}",
+            project_path,
+            config.install_commands.join(" && ")
+        );
+
+        run_script_vm(vec![&final_cmd])?;
+
+        Ok(())
+    }
 }
