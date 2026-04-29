@@ -7,14 +7,10 @@ use uuid::Uuid;
 
 use crate::app_errors::AppError;
 use crate::app_types::{DeployDetails, JobType, RunDetails};
+use crate::controller::storage::s3::S3Service;
 use crate::controller::vm::firecracker::Firecracker;
 use crate::controller::vm::vm_pool::VmPool;
 use crate::infra::process::run_script;
-
-pub struct JobDispatcher {
-    vm: Option<Firecracker>,
-    vm_pool: VmPool,
-}
 
 impl fmt::Display for JobType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -59,9 +55,19 @@ impl VmDetails for RunDetails {
     }
 }
 
+pub struct JobDispatcher {
+    vm: Option<Firecracker>,
+    vm_pool: VmPool,
+    s3_service: S3Service,
+}
+
 impl JobDispatcher {
-    pub fn new(vm_pool: VmPool) -> Self {
-        Self { vm: None, vm_pool }
+    pub fn new(vm_pool: VmPool, s3_service: S3Service) -> Self {
+        Self {
+            vm: None,
+            vm_pool,
+            s3_service,
+        }
     }
 
     fn git_url_validator(&self, git_url: &str) -> Result<bool, AppError> {
@@ -85,6 +91,8 @@ impl JobDispatcher {
                     .vm_pool
                     .get_from_ideal_vms()
                     .ok_or(AppError::NoAvailableVm)?;
+
+                self.vm_pool.add_to_pool(project_id, new_id);
 
                 println!("Starting VM {}", new_id);
 
@@ -145,10 +153,22 @@ impl JobDispatcher {
         Ok(())
     }
 
-    pub async fn dispatch_run_job(&mut self, run_details: &RunDetails) -> Result<(), AppError> {
-        let (vm_id, is_new) = self.get_or_create_vm(run_details.project_id).await?;
+    pub async fn dispatch_run_job(&mut self, project_id: Uuid) -> Result<(), AppError> {
+        let (_, is_new) = self.get_or_create_vm(project_id).await?;
+
         if is_new {
-            self.move_json_to_vm(run_details).await?;
+            let presigned_download_url = self
+                .s3_service
+                .get_presigned_download_url(&project_id.to_string())
+                .await?;
+
+            let run_details = RunDetails {
+                presigned_download_url,
+                run_command: "".to_string(),
+                project_id,
+            };
+
+            self.move_json_to_vm(&run_details).await?;
 
             run_script(vec![
                 "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
