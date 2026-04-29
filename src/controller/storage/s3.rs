@@ -26,14 +26,28 @@ impl S3Service {
         }
     }
 
-    pub async fn get_presigned_url(&self, key: &str) -> Result<String, AppError> {
+    pub async fn get_presigned_upload_url(&self, key: &str) -> Result<String, AppError> {
         let presigned_req = self
             .client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
             .presigned(PresigningConfig::expires_in(Duration::from_mins(10))?)
-            .await?;
+            .await
+            .map_err(aws_sdk_s3::Error::from)?;
+
+        Ok(presigned_req.uri().to_string())
+    }
+
+    pub async fn get_presigned_download_url(&self, key: &str) -> Result<String, AppError> {
+        let presigned_req = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(PresigningConfig::expires_in(Duration::from_mins(10))?)
+            .await
+            .map_err(aws_sdk_s3::Error::from)?;
 
         Ok(presigned_req.uri().to_string())
     }
