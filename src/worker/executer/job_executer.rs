@@ -1,6 +1,10 @@
+use std::time::Duration;
+
+use tokio::net::TcpStream;
+
 use crate::{
     app_errors::AppError,
-    app_types::DeployDetails,
+    app_types::{DeployDetails, RunDetails},
     config::project_default_config::get_default_config,
     infra::{detect::detect_project_type, process::run_script_vm},
 };
@@ -103,7 +107,7 @@ impl JobExecuter {
 
         let upload_cmd = format!(
             "curl -X PUT -T {}.zip '{}'",
-            "dist", deploy_details.presigned_url
+            "dist", deploy_details.presigned_upload_url
         );
 
         println!("{}", upload_cmd);
@@ -117,6 +121,45 @@ impl JobExecuter {
         self.pull(deploy_details).await?;
         self.install(deploy_details).await?;
         self.build(deploy_details).await?;
+
+        Ok(())
+    }
+
+    pub async fn run(&self, run_details: &RunDetails) -> Result<(), AppError> {
+        let port_exists = TcpStream::connect("172.16.0.2:3000").await.is_ok();
+
+        if port_exists {
+            return Ok(());
+        }
+
+        let project_id = run_details.project_id;
+
+        let download_cmd = format!(
+            "curl -o {}.zip '{}'",
+            project_id, run_details.presigned_download_url
+        );
+
+        run_script_vm(vec![&download_cmd])?;
+
+        let unzip_cmd = format!("unzip {}.zip", project_id);
+
+        run_script_vm(vec![&unzip_cmd])?;
+
+        let project_path = format!("/root/{}", project_id);
+
+        let project_type = detect_project_type(&project_path);
+
+        if !run_details.run_command.is_empty() {
+            let run_cmd = format!("cd {} && {}", project_path, run_details.run_command);
+
+            run_script_vm(vec![&run_cmd])?;
+            return Ok(());
+        }
+
+        let config = get_default_config(project_type);
+        let config_run_cmd = config.run_command.unwrap();
+
+        run_script_vm(vec![&format!("cd {} && {}", project_path, config_run_cmd)])?;
 
         Ok(())
     }
