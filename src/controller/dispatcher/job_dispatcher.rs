@@ -1,17 +1,17 @@
 use core::fmt;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 use url::Url;
 use uuid::Uuid;
 
 use crate::app_errors::AppError;
 use crate::app_types::{DeployDetails, JobType, RunDetails};
+use crate::config::app_config::get_dir;
 use crate::controller::storage::s3::S3Service;
 use crate::controller::vm::firecracker::Firecracker;
 use crate::controller::vm::vm_pool::VmPool;
-use crate::infra::process::{run_script, run_script_vm_bg};
+use crate::infra::process::run_script;
 
 impl fmt::Display for JobType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -132,7 +132,7 @@ impl JobDispatcher {
             vm.get_base_id() + 2
         );
 
-        run_script(vec![&copy_job_json_to_vm])?;
+        run_script(vec![&copy_job_json_to_vm], get_dir())?;
 
         Ok(())
     }
@@ -145,9 +145,12 @@ impl JobDispatcher {
         self.get_or_create_vm(deploy_details.project_id).await?;
         self.move_json_to_vm(deploy_details).await?;
 
-        run_script(vec![
-            "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
-        ])?;
+        run_script(
+            vec![
+                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
+            ],
+            get_dir(),
+        )?;
 
         self.vm
             .as_ref()
@@ -172,9 +175,12 @@ impl JobDispatcher {
 
         println!("VM is new: {}", is_new);
 
-        run_script(vec![
-            "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
-        ])?;
+        run_script(
+            vec![
+                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
+            ],
+            get_dir(),
+        )?;
 
         if is_new == true {
             println!("Getting presigned download URL");
@@ -202,7 +208,10 @@ impl JobDispatcher {
             //     .unwrap()
             //     .execute_command("cd /root && nohup ./worker job.json run > /dev/null 2>&1 &")?;
 
-            run_script_vm_bg(vec!["cd /root && ./worker job.json run"])?;
+            self.vm
+                .as_ref()
+                .unwrap()
+                .execute_command_bg("cd /root && ./worker job.json run")?;
         }
 
         println!(">>> execute_command returned, is_new was: {}", is_new);

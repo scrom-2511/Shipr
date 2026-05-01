@@ -1,4 +1,8 @@
-use crate::{app_errors::AppError, app_types::ProjectType, infra::process::run_script};
+use crate::{
+    app_errors::AppError,
+    config::app_config::get_dir,
+    infra::process::{run_script, run_script_bg},
+};
 use std::{
     process::{Command, Stdio},
     thread::sleep,
@@ -45,7 +49,7 @@ impl Firecracker {
             self.api_socket
         );
 
-        run_script(vec![&cmd_1])?;
+        run_script(vec![&cmd_1], get_dir())?;
 
         Command::new("bash")
             .arg("-c")
@@ -80,7 +84,7 @@ impl Firecracker {
         );
         let cmd_4 = format!(r#"sudo ip link set dev {} up"#, tap_dev);
 
-        run_script(vec![&cmd_1, &cmd_2, &cmd_3, &cmd_4])?;
+        run_script(vec![&cmd_1, &cmd_2, &cmd_3, &cmd_4], get_dir())?;
 
         Ok(())
     }
@@ -125,7 +129,7 @@ impl Firecracker {
         println!("rootfs_path: {}", rootfs_path);
         let copy_rootfs = format!(r#"cp {} rootfs-{}.ext4"#, rootfs_path, self.vm_id);
 
-        run_script(vec![&copy_rootfs])?;
+        run_script(vec![&copy_rootfs], get_dir())?;
 
         let rootfs = format!("/home/scrom/rootfs-{}.ext4", self.vm_id);
 
@@ -191,12 +195,12 @@ impl Firecracker {
 
     pub fn execute_command(&self, command: &str) -> Result<(), AppError> {
         let cmd = format!(
-            r#"ssh -t -i ubuntu.id_rsa root@172.16.0.{} 'bash -i -c "{}"'"#,
+            r#"ssh -i ubuntu.id_rsa root@172.16.0.{} 'bash -i -c "{}"'"#,
             self.base_id + 2,
             command
         );
 
-        run_script(vec![&cmd])?;
+        run_script(vec![&cmd], get_dir())?;
 
         Ok(())
     }
@@ -208,7 +212,7 @@ impl Firecracker {
             command
         );
 
-        run_script(vec![&cmd])?;
+        run_script_bg(vec![&cmd], get_dir())?;
 
         Ok(())
     }
@@ -226,7 +230,7 @@ impl Firecracker {
 
         let cmd_2 = format!(r#"rm rootfs-{}.ext4"#, self.vm_id);
 
-        run_script(vec![&cmd_1, &cmd_2])?;
+        run_script(vec![&cmd_1, &cmd_2], get_dir())?;
 
         Ok(())
     }

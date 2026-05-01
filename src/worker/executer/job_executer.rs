@@ -5,8 +5,11 @@ use tokio::net::TcpStream;
 use crate::{
     app_errors::AppError,
     app_types::{DeployDetails, RunDetails},
-    config::project_default_config::get_default_config,
-    infra::{detect::detect_project_type, process::run_script_vm},
+    config::{app_config::get_worker_dir, project_default_config::get_default_config},
+    infra::{
+        detect::detect_project_type,
+        process::{run_script, run_script_bg},
+    },
 };
 
 pub struct JobExecuter;
@@ -38,11 +41,11 @@ impl JobExecuter {
 
     async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
         println!("Pulling code broo");
-        let git_clone_cmd = format!("cd /root && git clone {}", deploy_details.url);
+        let git_clone_cmd = format!("git clone {}", deploy_details.url);
         println!("{}", git_clone_cmd);
 
         println!("pulling code completed");
-        run_script_vm(vec![&git_clone_cmd])?;
+        run_script(vec![&git_clone_cmd], get_worker_dir())?;
 
         Ok(())
     }
@@ -55,7 +58,7 @@ impl JobExecuter {
 
             let final_cmd = format!("cd {} && {}", project_path, install_cmd);
 
-            run_script_vm(vec![&final_cmd])?;
+            run_script(vec![&final_cmd], get_worker_dir())?;
 
             return Ok(());
         }
@@ -73,7 +76,7 @@ impl JobExecuter {
 
         println!("Final command: {}", final_cmd);
 
-        run_script_vm(vec![&final_cmd])?;
+        run_script(vec![&final_cmd], get_worker_dir())?;
 
         Ok(())
     }
@@ -87,7 +90,7 @@ impl JobExecuter {
 
             let final_cmd = format!("cd {} && {}", project_path, build_cmd);
 
-            run_script_vm(vec![&final_cmd])?;
+            run_script(vec![&final_cmd], get_worker_dir())?;
             return Ok(());
         }
 
@@ -102,7 +105,7 @@ impl JobExecuter {
 
         println!("Final command: {}", final_cmd);
 
-        run_script_vm(vec![&final_cmd])?;
+        run_script(vec![&final_cmd], get_worker_dir())?;
 
         let zip_cmd = format!(
             "cd /root/{}/{} && zip -r /root/{}.zip . /root/job.json",
@@ -113,7 +116,7 @@ impl JobExecuter {
 
         println!("{}", zip_cmd);
 
-        run_script_vm(vec![&zip_cmd])?;
+        run_script(vec![&zip_cmd], get_worker_dir())?;
 
         let upload_cmd = format!(
             "curl -X PUT -T {}.zip '{}'",
@@ -122,7 +125,7 @@ impl JobExecuter {
 
         println!("{}", upload_cmd);
 
-        run_script_vm(vec![&upload_cmd])?;
+        run_script(vec![&upload_cmd], get_worker_dir())?;
 
         Ok(())
     }
@@ -154,11 +157,11 @@ impl JobExecuter {
             project_id, run_details.presigned_download_url
         );
 
-        run_script_vm(vec![&download_cmd])?;
+        run_script(vec![&download_cmd], get_worker_dir())?;
 
         let unzip_cmd = format!("unzip {}.zip -d /root/{}", project_id, project_id);
 
-        run_script_vm(vec![&unzip_cmd])?;
+        run_script(vec![&unzip_cmd], get_worker_dir())?;
 
         sleep(Duration::from_secs(3));
 
@@ -171,11 +174,7 @@ impl JobExecuter {
             let run_cmd = format!("cd {} && {}", project_path, run_details.run_command);
             println!("{}", run_cmd);
 
-            let mut child = Command::new("bash")
-                .arg("-c")
-                .arg(&run_cmd)
-                .spawn()
-                .map_err(|e| AppError::CmdFailed(e.to_string()))?;
+            run_script_bg(vec![&run_cmd], get_worker_dir())?;
 
             return Ok(());
         }
@@ -189,13 +188,15 @@ impl JobExecuter {
 
         let final_cmd = format!("cd {} && {}", project_path, config_run_cmd);
 
-        Command::new("bash")
-            .arg("-c")
-            .arg(&final_cmd)
-            .spawn()
-            .map_err(|e| AppError::CmdFailed(e.to_string()))?;
+        // Command::new("bash")
+        //     .arg("-c")
+        //     .arg(&final_cmd)
+        //     .spawn()
+        //     .map_err(|e| AppError::CmdFailed(e.to_string()))?;
 
         // run_script_vm(vec![&final_cmd])?;
+
+        run_script_bg(vec![&final_cmd], get_worker_dir())?;
 
         println!("Run command completed");
         Ok(())
