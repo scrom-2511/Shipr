@@ -73,7 +73,6 @@ impl Firecracker {
     fn setup_network(&self) -> Result<(), AppError> {
         let tap_dev = format!("tap{}", self.vm_id);
         let tap_ip = format!("172.16.0.{}", self.base_id + 1);
-        println!("tap_ip: {}", tap_ip);
         let mask_short = "/30";
 
         let cmd_1 = format!(r#"sudo ip link del {} 2> /dev/null || true"#, tap_dev);
@@ -126,7 +125,6 @@ impl Firecracker {
 
     async fn set_rootfs(&self) -> Result<(), AppError> {
         let rootfs_path = format!("rootfs-nodejs.ext4");
-        println!("rootfs_path: {}", rootfs_path);
         let copy_rootfs = format!(r#"cp {} rootfs-{}.ext4"#, rootfs_path, self.vm_id);
 
         run_script(vec![&copy_rootfs], get_dir())?;
@@ -237,22 +235,16 @@ impl Firecracker {
 
     async fn all_setup(&mut self) -> Result<(), AppError> {
         self.setup_network()?;
-        println!("network setup done");
 
         self.set_machine_config().await?;
-        println!("machine config set");
 
         self.set_boot_source().await?;
-        println!("boot source set");
 
         self.set_rootfs().await?;
-        println!("rootfs set");
 
         self.set_network_interface().await?;
-        println!("network interface set");
 
         self.start_instance().await?;
-        println!("instance started");
 
         Ok(())
     }

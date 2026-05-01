@@ -21,8 +21,12 @@ pub async fn proxy(
     req: HttpRequest,
     body: web::Bytes,
 ) -> Result<HttpResponse, AppError> {
-    println!("Proxying request");
     vm_request_proxy.lock().await.proxy_request(req, body).await
+}
+
+async fn github_webhook(body: web::Bytes) -> HttpResponse {
+    println!("Webhook received: {:?}", body);
+    HttpResponse::Ok().finish()
 }
 
 #[derive(Parser)]
@@ -74,12 +78,7 @@ pub async fn cli(
             dist_dir,
             home_dir,
         } => {
-            println!("URL: {}", url);
-            println!("Install: {:?}", install);
-            println!("Build: {:?}", build);
-
             let project_id = uuid::Uuid::new_v4();
-            println!("Project ID: {}", project_id);
 
             let presigned_upload_url = s3_service
                 .get_presigned_upload_url(&project_id.to_string())
@@ -137,6 +136,7 @@ pub async fn cli(
             HttpServer::new(move || {
                 App::new()
                     .app_data(vm_request_proxy.clone())
+                    .route("/webhook/github", web::post().to(github_webhook))
                     .default_service(web::to(proxy))
             })
             .bind(("127.0.0.1", 8080))?

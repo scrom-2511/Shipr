@@ -40,11 +40,8 @@ impl JobExecuter {
     }
 
     async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
-        println!("Pulling code broo");
         let git_clone_cmd = format!("git clone {}", deploy_details.url);
-        println!("{}", git_clone_cmd);
 
-        println!("pulling code completed");
         run_script(vec![&git_clone_cmd], get_worker_dir())?;
 
         Ok(())
@@ -64,7 +61,6 @@ impl JobExecuter {
         }
 
         let project_type = detect_project_type(&project_path);
-        println!("Project type: {}", project_type);
 
         let config = get_default_config(project_type);
 
@@ -74,8 +70,6 @@ impl JobExecuter {
             config.install_commands.join(" && ")
         );
 
-        println!("Final command: {}", final_cmd);
-
         run_script(vec![&final_cmd], get_worker_dir())?;
 
         Ok(())
@@ -83,7 +77,6 @@ impl JobExecuter {
 
     async fn build(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
         let project_path = self.get_project_path(deploy_details)?;
-        println!("{}", project_path);
 
         if !deploy_details.build_commands.is_empty() {
             let build_cmd = deploy_details.build_commands.join(" && ");
@@ -103,8 +96,6 @@ impl JobExecuter {
             config.build_commands.join(" && ")
         );
 
-        println!("Final command: {}", final_cmd);
-
         run_script(vec![&final_cmd], get_worker_dir())?;
 
         let zip_cmd = format!(
@@ -114,8 +105,6 @@ impl JobExecuter {
             deploy_details.project_id
         );
 
-        println!("{}", zip_cmd);
-
         run_script(vec![&zip_cmd], get_worker_dir())?;
 
         let upload_cmd = format!(
@@ -123,21 +112,16 @@ impl JobExecuter {
             deploy_details.project_id, deploy_details.presigned_upload_url
         );
 
-        println!("{}", upload_cmd);
-
         run_script(vec![&upload_cmd], get_worker_dir())?;
 
         Ok(())
     }
 
     pub async fn execute(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
-        println!("Pulling code");
         self.pull(deploy_details).await?;
 
-        println!("Installing dependencies");
         self.install(deploy_details).await?;
 
-        println!("Building project");
         self.build(deploy_details).await?;
 
         Ok(())
@@ -170,21 +154,15 @@ impl JobExecuter {
         let project_type = detect_project_type(&project_path);
 
         if !run_details.run_command.is_empty() {
-            println!("Using custom run command");
             let run_cmd = format!("cd {} && {}", project_path, run_details.run_command);
-            println!("{}", run_cmd);
 
             run_script_bg(vec![&run_cmd], get_worker_dir())?;
 
             return Ok(());
         }
 
-        println!("Using default run command");
-
         let config = get_default_config(project_type);
         let config_run_cmd = config.run_command.unwrap();
-
-        println!("{}", config_run_cmd);
 
         let final_cmd = format!("cd {} && {}", project_path, config_run_cmd);
 

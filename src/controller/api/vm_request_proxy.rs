@@ -110,14 +110,7 @@ impl VmRequestProxy {
         req: HttpRequest,
         body: web::Bytes,
     ) -> Result<HttpResponse, AppError> {
-        println!(
-            "Proxying request for project {}",
-            req.connection_info().host()
-        );
         let (project_id, target_path) = self.extract_project_and_path(&req)?;
-
-        println!("Project id: {}", project_id);
-        println!("Target path: {}", target_path);
 
         self.job_dispatcher.dispatch_run_job(project_id).await?;
 

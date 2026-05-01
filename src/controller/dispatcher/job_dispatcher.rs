@@ -85,7 +85,6 @@ impl JobDispatcher {
     async fn get_or_create_vm(&mut self, project_id: Uuid) -> Result<(u32, bool), AppError> {
         match self.vm_pool.get_from_pool(project_id) {
             Some(id) => {
-                println!("Using existing VM {}", id);
                 self.vm = Some(Firecracker::new(id));
                 Ok((id, false))
             }
@@ -97,8 +96,6 @@ impl JobDispatcher {
 
                 self.vm_pool.add_to_pool(project_id, new_id);
                 self.vm = Some(Firecracker::new(new_id));
-
-                println!("Starting VM {}", new_id);
 
                 Ok((new_id as u32, true))
             }
@@ -161,19 +158,7 @@ impl JobDispatcher {
     }
 
     pub async fn dispatch_run_job(&mut self, project_id: Uuid) -> Result<(), AppError> {
-        println!("Dispatching run job for project {}", project_id);
-        let (vm_id, is_new) = self.get_or_create_vm(project_id).await?;
-
-        println!(
-            ">>> dispatch_run_job: project={} vm_id={} is_new={}",
-            project_id, vm_id, is_new
-        );
-        println!(
-            ">>> pool state: {:?}",
-            self.vm_pool.get_from_pool(project_id)
-        );
-
-        println!("VM is new: {}", is_new);
+        let (_, is_new) = self.get_or_create_vm(project_id).await?;
 
         run_script(
             vec![
@@ -183,7 +168,6 @@ impl JobDispatcher {
         )?;
 
         if is_new == true {
-            println!("Getting presigned download URL");
             let presigned_download_url = self
                 .s3_service
                 .get_presigned_download_url(&project_id.to_string())
@@ -195,13 +179,7 @@ impl JobDispatcher {
                 project_id,
             };
 
-            println!("Moving JSON to VM");
-
             self.move_json_to_vm(&run_details).await?;
-
-            println!("Copying worker to VM");
-
-            println!("Executing command in VM");
 
             // self.vm
             //     .as_ref()
@@ -213,8 +191,6 @@ impl JobDispatcher {
                 .unwrap()
                 .execute_command_bg("cd /root && ./worker job.json run")?;
         }
-
-        println!(">>> execute_command returned, is_new was: {}", is_new);
 
         Ok(())
     }
