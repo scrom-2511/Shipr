@@ -5,17 +5,17 @@ use std::{
     time::Duration,
 };
 
+#[derive(Clone)]
 pub struct Firecracker {
     api_socket: String,
-    unique_id: u32,
+    vm_id: u32,
     client: reqwest::Client,
     base_id: u32,
-    lang: ProjectType,
 }
 
 impl Firecracker {
-    pub fn new(unique_id: u32, lang: ProjectType) -> Self {
-        let api_socket = format!("/tmp/firecracker-{}.socket", unique_id);
+    pub fn new(vm_id: u32) -> Self {
+        let api_socket = format!("/tmp/firecracker-{}.socket", vm_id);
 
         let path: &str = api_socket.as_ref();
 
@@ -24,19 +24,18 @@ impl Firecracker {
             .build()
             .unwrap();
 
-        let base_id = unique_id * 4;
+        let base_id = vm_id * 4;
 
         Self {
             api_socket,
-            unique_id,
+            vm_id,
             client,
             base_id,
-            lang,
         }
     }
 
     pub fn get_base_id(&self) -> u32 {
-        self.unique_id
+        self.vm_id
     }
 
     fn init_vm(&mut self) -> Result<(), AppError> {
@@ -68,7 +67,7 @@ impl Firecracker {
     }
 
     fn setup_network(&self) -> Result<(), AppError> {
-        let tap_dev = format!("tap{}", self.unique_id);
+        let tap_dev = format!("tap{}", self.vm_id);
         let tap_ip = format!("172.16.0.{}", self.base_id + 1);
         println!("tap_ip: {}", tap_ip);
         let mask_short = "/30";
@@ -124,11 +123,11 @@ impl Firecracker {
     async fn set_rootfs(&self) -> Result<(), AppError> {
         let rootfs_path = format!("rootfs-nodejs.ext4");
         println!("rootfs_path: {}", rootfs_path);
-        let copy_rootfs = format!(r#"cp {} rootfs-{}.ext4"#, rootfs_path, self.unique_id);
+        let copy_rootfs = format!(r#"cp {} rootfs-{}.ext4"#, rootfs_path, self.vm_id);
 
         run_script(vec![&copy_rootfs])?;
 
-        let rootfs = format!("/home/scrom/rootfs-{}.ext4", self.unique_id);
+        let rootfs = format!("/home/scrom/rootfs-{}.ext4", self.vm_id);
 
         let data = serde_json::json!({
             "drive_id": "rootfs",
@@ -148,7 +147,7 @@ impl Firecracker {
     }
 
     async fn set_network_interface(&self) -> Result<(), AppError> {
-        let tap_dev = format!("tap{}", self.unique_id);
+        let tap_dev = format!("tap{}", self.vm_id);
 
         let vm_last_octet = self.base_id + 2;
 
@@ -202,6 +201,18 @@ impl Firecracker {
         Ok(())
     }
 
+    pub fn execute_command_bg(&self, command: &str) -> Result<(), AppError> {
+        let cmd = format!(
+            r#"ssh -i ubuntu.id_rsa root@172.16.0.{} 'bash -i -c "{}"'"#,
+            self.base_id + 2,
+            command
+        );
+
+        run_script(vec![&cmd])?;
+
+        Ok(())
+    }
+
     async fn setup_ssh(&self) -> Result<(), AppError> {
         self.execute_command("ip route add default via 172.16.0.1 dev eth0")?;
         self.execute_command("echo 'nameserver 8.8.8.8' > /etc/resolv.conf")?;
@@ -211,12 +222,9 @@ impl Firecracker {
 
     pub async fn destroy_vm(&self) -> Result<(), AppError> {
         self.execute_command("reboot")?;
-        let cmd_1 = format!(
-            r#"sudo ip link del tap{} 2> /dev/null || true"#,
-            self.unique_id
-        );
+        let cmd_1 = format!(r#"sudo ip link del tap{} 2> /dev/null || true"#, self.vm_id);
 
-        let cmd_2 = format!(r#"rm rootfs-{}.ext4"#, self.unique_id);
+        let cmd_2 = format!(r#"rm rootfs-{}.ext4"#, self.vm_id);
 
         run_script(vec![&cmd_1, &cmd_2])?;
 

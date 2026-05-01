@@ -9,10 +9,22 @@ pub struct DeployDetails {
     pub branch: String,
     pub install_commands: Vec<String>,
     pub build_commands: Vec<String>,
-    pub unique_id: Uuid,
+    pub project_id: Uuid,
     pub home_dir: String,
     pub dist_dir: String,
-    pub presigned_url: String,
+    pub presigned_upload_url: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RunDetails {
+    pub presigned_download_url: String,
+    pub run_command: String,
+    pub project_id: Uuid,
+}
+
+pub enum JobType {
+    Deploy,
+    Run,
 }
 
 #[derive(Clone)]

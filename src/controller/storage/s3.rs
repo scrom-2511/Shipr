@@ -5,6 +5,7 @@ use aws_sdk_s3::{Client, presigning::PresigningConfig};
 
 use crate::app_errors::AppError;
 
+#[derive(Clone)]
 pub struct S3Service {
     client: Client,
     bucket: String,
@@ -27,6 +28,8 @@ impl S3Service {
     }
 
     pub async fn get_presigned_upload_url(&self, key: &str) -> Result<String, AppError> {
+        let key = format!("{}.zip", key);
+
         let presigned_req = self
             .client
             .put_object()
@@ -40,6 +43,8 @@ impl S3Service {
     }
 
     pub async fn get_presigned_download_url(&self, key: &str) -> Result<String, AppError> {
+        let key = format!("{}.zip", key);
+
         let presigned_req = self
             .client
             .get_object()

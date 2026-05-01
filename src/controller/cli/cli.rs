@@ -1,5 +1,8 @@
-use actix_web::{App, HttpServer, web};
+use std::{thread::sleep, time::Duration};
+
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use clap::{Parser, Subcommand};
+use futures::lock::Mutex;
 use tokio::task;
 
 use crate::{
@@ -7,11 +10,20 @@ use crate::{
     app_types::{DeployDetails, ProjectType},
     controller::{
         api::vm_request_proxy::VmRequestProxy,
-        scheduler::job_dispatcher::JobDispatcher,
+        dispatcher::job_dispatcher::JobDispatcher,
         storage::s3::S3Service,
         vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
     },
 };
+
+pub async fn proxy(
+    vm_request_proxy: web::Data<Mutex<VmRequestProxy>>,
+    req: HttpRequest,
+    body: web::Bytes,
+) -> Result<HttpResponse, AppError> {
+    println!("Proxying request");
+    vm_request_proxy.lock().await.proxy_request(req, body).await
+}
 
 #[derive(Parser)]
 #[command(name = "shipr")]
@@ -66,37 +78,44 @@ pub async fn cli(
             println!("Install: {:?}", install);
             println!("Build: {:?}", build);
 
-            let unique_id = uuid::Uuid::new_v4();
-            println!("Unique ID: {}", unique_id);
+            let project_id = uuid::Uuid::new_v4();
+            println!("Project ID: {}", project_id);
 
-            let presigned_url = s3_service
-                .get_presigned_url(format!("{}.zip", unique_id).as_str())
+            let presigned_upload_url = s3_service
+                .get_presigned_upload_url(&project_id.to_string())
                 .await?;
 
-            println!("Presigned URL: {}", presigned_url);
+            for _ in 0..1 {
+                let new_id = id_allocator.allocate_id().await? as u32;
+                let mut new_vm = Firecracker::new(new_id);
+
+                new_vm.create_vm().await?;
+                vm_pool.add_to_ideal_vms(new_id);
+            }
 
             let deploy_details = DeployDetails {
                 url,
                 install_commands: install,
                 build_commands: build,
                 branch,
-                unique_id,
+                project_id,
                 home_dir,
                 dist_dir,
-                presigned_url,
+                presigned_upload_url,
             };
 
-            println!("Worker copied to VM");
-
-            let mut pull_build_core = JobDispatcher::new();
-            pull_build_core
-                .dispatch_job(&deploy_details, id_allocator)
-                .await?;
+            let mut job_dispatcher = JobDispatcher::new(vm_pool, s3_service);
+            job_dispatcher.dispatch_deploy_job(&deploy_details).await?;
         }
 
         Commands::Serve {} => {
-            let serve_core =
-                web::Data::new(VmRequestProxy::new(vm_pool.clone(), id_allocator.clone())?);
+            let job_dispatcher = JobDispatcher::new(vm_pool.clone(), s3_service.clone());
+
+            let vm_request_proxy = web::Data::new(Mutex::new(VmRequestProxy::new(
+                vm_pool.clone(),
+                id_allocator.clone(),
+                job_dispatcher.clone(),
+            )?));
 
             for _ in 0..1 {
                 let id_allocator = id_allocator.clone();
@@ -104,7 +123,7 @@ pub async fn cli(
 
                 task::spawn(async move {
                     let new_id = id_allocator.allocate_id().await? as u32;
-                    let mut new_vm = Firecracker::new(new_id, ProjectType::Node);
+                    let mut new_vm = Firecracker::new(new_id);
 
                     new_vm.create_vm().await?;
                     vm_pool.add_to_ideal_vms(new_id);
@@ -116,8 +135,9 @@ pub async fn cli(
             println!("Starting server");
 
             HttpServer::new(move || {
-                App::new().app_data(serve_core.clone())
-                // .default_service(web::to(proxy))
+                App::new()
+                    .app_data(vm_request_proxy.clone())
+                    .default_service(web::to(proxy))
             })
             .bind(("127.0.0.1", 8080))?
             .run()

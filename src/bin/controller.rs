@@ -1,23 +1,10 @@
-use actix_web::{HttpRequest, HttpResponse, Result, web};
-use shipr::{
-    app_errors::AppError,
-    controller::{
-        api::vm_request_proxy::VmRequestProxy,
-        cli::cli::cli,
-        storage::s3::S3Service,
-        vm::{id_allocator::IdAllocator, vm_pool::VmPool},
-    },
+use shipr::controller::{
+    cli::cli::cli,
+    storage::s3::S3Service,
+    vm::{id_allocator::IdAllocator, vm_pool::VmPool},
 };
 
 pub mod worker;
-
-pub async fn proxy(
-    core: web::Data<VmRequestProxy>,
-    req: HttpRequest,
-    body: web::Bytes,
-) -> Result<HttpResponse, AppError> {
-    core.proxy_request(req, body).await
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

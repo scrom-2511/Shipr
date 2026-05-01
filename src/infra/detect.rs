@@ -3,13 +3,9 @@ use std::{fs, path::Path};
 use crate::app_types::ProjectType;
 
 pub fn detect_project_type(path: &str) -> ProjectType {
-    let html_path = format!("{}/dist/index.html", path);
+    let html_path = format!("{}/index.html", path);
     let package_json_path = format!("{}/package.json", path);
     let cargo_toml_path = format!("{}/Cargo.toml", path);
-
-    if Path::new(&html_path).exists() {
-        return ProjectType::Html;
-    }
 
     if Path::new(&package_json_path).exists() {
         let package_json_str = fs::read_to_string(&package_json_path).unwrap();
@@ -26,6 +22,10 @@ pub fn detect_project_type(path: &str) -> ProjectType {
 
     if Path::new(&cargo_toml_path).exists() {
         return ProjectType::Rust;
+    }
+
+    if Path::new(&html_path).exists() {
+        return ProjectType::Html;
     }
 
     ProjectType::Unknown

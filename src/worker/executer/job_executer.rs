@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{process::Command, thread::sleep, time::Duration};
 
 use tokio::net::TcpStream;
 
@@ -37,8 +37,11 @@ impl JobExecuter {
     }
 
     async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        println!("Pulling code broo");
         let git_clone_cmd = format!("cd /root && git clone {}", deploy_details.url);
+        println!("{}", git_clone_cmd);
 
+        println!("pulling code completed");
         run_script_vm(vec![&git_clone_cmd])?;
 
         Ok(())
@@ -53,10 +56,13 @@ impl JobExecuter {
             let final_cmd = format!("cd {} && {}", project_path, install_cmd);
 
             run_script_vm(vec![&final_cmd])?;
+
             return Ok(());
         }
 
         let project_type = detect_project_type(&project_path);
+        println!("Project type: {}", project_type);
+
         let config = get_default_config(project_type);
 
         let final_cmd = format!(
@@ -64,6 +70,8 @@ impl JobExecuter {
             project_path,
             config.install_commands.join(" && ")
         );
+
+        println!("Final command: {}", final_cmd);
 
         run_script_vm(vec![&final_cmd])?;
 
@@ -92,13 +100,15 @@ impl JobExecuter {
             config.build_commands.join(" && ")
         );
 
+        println!("Final command: {}", final_cmd);
+
         run_script_vm(vec![&final_cmd])?;
 
         let zip_cmd = format!(
-            "zip -r {}.zip {}/{}",
-            "dist",
+            "cd /root/{}/{} && zip -r /root/{}.zip . /root/job.json",
             self.extract_repo_name(&deploy_details.url)?,
-            deploy_details.dist_dir
+            deploy_details.dist_dir,
+            deploy_details.project_id
         );
 
         println!("{}", zip_cmd);
@@ -107,7 +117,7 @@ impl JobExecuter {
 
         let upload_cmd = format!(
             "curl -X PUT -T {}.zip '{}'",
-            "dist", deploy_details.presigned_upload_url
+            deploy_details.project_id, deploy_details.presigned_upload_url
         );
 
         println!("{}", upload_cmd);
@@ -118,8 +128,13 @@ impl JobExecuter {
     }
 
     pub async fn execute(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+        println!("Pulling code");
         self.pull(deploy_details).await?;
+
+        println!("Installing dependencies");
         self.install(deploy_details).await?;
+
+        println!("Building project");
         self.build(deploy_details).await?;
 
         Ok(())
@@ -141,26 +156,48 @@ impl JobExecuter {
 
         run_script_vm(vec![&download_cmd])?;
 
-        let unzip_cmd = format!("unzip {}.zip", project_id);
+        let unzip_cmd = format!("unzip {}.zip -d /root/{}", project_id, project_id);
 
         run_script_vm(vec![&unzip_cmd])?;
+
+        sleep(Duration::from_secs(3));
 
         let project_path = format!("/root/{}", project_id);
 
         let project_type = detect_project_type(&project_path);
 
         if !run_details.run_command.is_empty() {
+            println!("Using custom run command");
             let run_cmd = format!("cd {} && {}", project_path, run_details.run_command);
+            println!("{}", run_cmd);
 
-            run_script_vm(vec![&run_cmd])?;
+            let mut child = Command::new("bash")
+                .arg("-c")
+                .arg(&run_cmd)
+                .spawn()
+                .map_err(|e| AppError::CmdFailed(e.to_string()))?;
+
             return Ok(());
         }
+
+        println!("Using default run command");
 
         let config = get_default_config(project_type);
         let config_run_cmd = config.run_command.unwrap();
 
-        run_script_vm(vec![&format!("cd {} && {}", project_path, config_run_cmd)])?;
+        println!("{}", config_run_cmd);
 
+        let final_cmd = format!("cd {} && {}", project_path, config_run_cmd);
+
+        Command::new("bash")
+            .arg("-c")
+            .arg(&final_cmd)
+            .spawn()
+            .map_err(|e| AppError::CmdFailed(e.to_string()))?;
+
+        // run_script_vm(vec![&final_cmd])?;
+
+        println!("Run command completed");
         Ok(())
     }
 }
