@@ -1,4 +1,4 @@
-use std::{thread::sleep, time::Duration};
+use std::{collections::HashMap, sync::Arc, thread::sleep, time::Duration};
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use clap::{Parser, Subcommand};
@@ -7,13 +7,15 @@ use tokio::task;
 
 use crate::{
     app_errors::AppError,
-    app_types::{DeployDetails, ProjectType},
+    app_types::{DeployDetails, InstallationEvent},
+    config::app_config::get_dir,
     controller::{
-        api::vm_request_proxy::VmRequestProxy,
+        api::{github::Github, vm_request_proxy::VmRequestProxy},
         dispatcher::job_dispatcher::JobDispatcher,
         storage::s3::S3Service,
         vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
     },
+    infra::process::run_script,
 };
 
 pub async fn proxy(
@@ -24,9 +26,29 @@ pub async fn proxy(
     vm_request_proxy.lock().await.proxy_request(req, body).await
 }
 
-async fn github_webhook(body: web::Bytes) -> HttpResponse {
-    println!("Webhook received: {:?}", body);
-    HttpResponse::Ok().finish()
+async fn github_webhook(
+    body: web::Bytes,
+    installation_ids: web::Data<Mutex<HashMap<String, InstallationEvent>>>,
+) -> Result<HttpResponse, AppError> {
+    let installation_event = serde_json::from_slice::<InstallationEvent>(&body).unwrap();
+    if installation_event.action == "created" {
+        println!(
+            "Installation created: {:?}",
+            installation_event.installation.id
+        );
+    };
+
+    let url = format!(
+        "https://github.com/{}",
+        installation_event.repositories.full_name
+    );
+
+    installation_ids
+        .lock()
+        .await
+        .insert(url, installation_event);
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[derive(Parser)]
@@ -58,8 +80,9 @@ enum Commands {
         #[arg(long)]
         dist_dir: String,
     },
-
+    // Deploy,
     Serve,
+    Listen,
 }
 
 pub async fn cli(
@@ -68,6 +91,8 @@ pub async fn cli(
     s3_service: S3Service,
 ) -> Result<(), AppError> {
     let args = Cli::parse();
+
+    let installation_ids = Mutex::new(HashMap::<String, Arc<InstallationEvent>>::new());
 
     match args.command {
         Commands::Deploy {
@@ -78,6 +103,40 @@ pub async fn cli(
             dist_dir,
             home_dir,
         } => {
+            let github_app_url = "https://github.com/apps/shipr-deployment/installations/new";
+
+            println!(
+                "Connect the project's repository with shipr by visiting. Opening the url in your browser..."
+            );
+
+            sleep(Duration::from_secs(2));
+
+            run_script(vec![&format!("xdg-open {}", github_app_url)], get_dir())?;
+
+            println!("Waiting for installation...");
+
+            let url = url.replace(".git", "");
+
+            let installation_event = loop {
+                if let Some(installation_event) = installation_ids.lock().await.get(&url) {
+                    break installation_event.clone();
+                }
+                sleep(Duration::from_secs(1));
+            };
+
+            let github = Github::new("3566236".to_string());
+
+            let token = github
+                .get_installation_access_token(&installation_event.installation.id)
+                .await?;
+
+            let url = format!(
+                "https://x-access-token:{}@github.com/{}.git",
+                token, installation_event.repositories.full_name
+            );
+
+            println!("Access Token: {}", token);
+
             let project_id = uuid::Uuid::new_v4();
 
             let presigned_upload_url = s3_service
@@ -138,6 +197,19 @@ pub async fn cli(
                     .app_data(vm_request_proxy.clone())
                     .route("/webhook/github", web::post().to(github_webhook))
                     .default_service(web::to(proxy))
+            })
+            .bind(("127.0.0.1", 8080))?
+            .run()
+            .await?;
+        }
+
+        Commands::Listen {} => {
+            let installation_ids_data = web::Data::new(installation_ids);
+
+            HttpServer::new(move || {
+                App::new()
+                    .app_data(installation_ids_data.clone())
+                    .route("/webhook/github", web::post().to(github_webhook))
             })
             .bind(("127.0.0.1", 8080))?
             .run()
