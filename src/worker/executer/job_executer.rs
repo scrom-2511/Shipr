@@ -134,7 +134,7 @@ impl JobExecuter {
             return Ok(());
         }
 
-        let project_id = run_details.project_id;
+        let project_id = &run_details.project_id;
 
         let download_cmd = format!(
             "curl -o {}.zip '{}'",

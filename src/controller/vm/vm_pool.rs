@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct VmPool {
-    pool: Arc<Mutex<HashMap<Uuid, u32>>>,
+    pool: Arc<Mutex<HashMap<String, u32>>>,
     ideal_vms: Arc<Mutex<Vec<u32>>>,
 }
 
@@ -17,19 +17,19 @@ impl VmPool {
         }
     }
 
-    pub fn add_to_pool(&self, project_id: Uuid, vm_id: u32) {
+    pub fn add_to_pool(&self, project_id: &str, vm_id: u32) {
         let mut pool = self.pool.lock().unwrap();
-        pool.insert(project_id, vm_id);
+        pool.insert(project_id.to_string(), vm_id);
     }
 
-    pub fn get_from_pool(&self, project_id: Uuid) -> Option<u32> {
+    pub fn get_from_pool(&self, project_id: &str) -> Option<u32> {
         let pool = self.pool.lock().unwrap();
-        pool.get(&project_id).copied()
+        pool.get(&project_id.to_string()).copied()
     }
 
-    pub fn remove_from_pool(&self, project_id: Uuid) {
+    pub fn remove_from_pool(&self, project_id: &str) {
         let mut pool = self.pool.lock().unwrap();
-        pool.remove(&project_id);
+        pool.remove(&project_id.to_string());
     }
 
     pub fn add_to_ideal_vms(&self, vm_id: u32) {

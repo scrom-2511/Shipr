@@ -24,7 +24,7 @@ impl fmt::Display for JobType {
 
 pub trait VmDetails {
     fn get_json(&self) -> String;
-    fn get_project_id(&self) -> Uuid;
+    fn get_project_id(&self) -> String;
     fn get_job_type(&self) -> JobType;
 }
 
@@ -33,8 +33,8 @@ impl VmDetails for DeployDetails {
         serde_json::to_string(self).unwrap()
     }
 
-    fn get_project_id(&self) -> Uuid {
-        self.project_id
+    fn get_project_id(&self) -> String {
+        self.project_id.to_string()
     }
 
     fn get_job_type(&self) -> JobType {
@@ -47,8 +47,8 @@ impl VmDetails for RunDetails {
         serde_json::to_string(self).unwrap()
     }
 
-    fn get_project_id(&self) -> Uuid {
-        self.project_id
+    fn get_project_id(&self) -> String {
+        self.project_id.to_string()
     }
 
     fn get_job_type(&self) -> JobType {
@@ -82,8 +82,8 @@ impl JobDispatcher {
         Err(AppError::InvalidGitUrl)
     }
 
-    async fn get_or_create_vm(&mut self, project_id: Uuid) -> Result<(u32, bool), AppError> {
-        match self.vm_pool.get_from_pool(project_id) {
+    async fn get_or_create_vm(&mut self, project_id: &str) -> Result<(u32, bool), AppError> {
+        match self.vm_pool.get_from_pool(&project_id) {
             Some(id) => {
                 self.vm = Some(Firecracker::new(id));
                 Ok((id, false))
@@ -94,7 +94,7 @@ impl JobDispatcher {
                     .get_from_ideal_vms()
                     .ok_or(AppError::NoAvailableVm)?;
 
-                self.vm_pool.add_to_pool(project_id, new_id);
+                self.vm_pool.add_to_pool(&project_id, new_id);
                 self.vm = Some(Firecracker::new(new_id));
 
                 Ok((new_id as u32, true))
@@ -139,7 +139,7 @@ impl JobDispatcher {
         deploy_details: &DeployDetails,
     ) -> Result<(), AppError> {
         self.git_url_validator(&deploy_details.url)?;
-        self.get_or_create_vm(deploy_details.project_id).await?;
+        self.get_or_create_vm(&deploy_details.project_id).await?;
         self.move_json_to_vm(deploy_details).await?;
 
         run_script(
@@ -157,8 +157,8 @@ impl JobDispatcher {
         Ok(())
     }
 
-    pub async fn dispatch_run_job(&mut self, project_id: Uuid) -> Result<(), AppError> {
-        let (_, is_new) = self.get_or_create_vm(project_id).await?;
+    pub async fn dispatch_run_job(&mut self, project_id: &str) -> Result<(), AppError> {
+        let (_, is_new) = self.get_or_create_vm(&project_id).await?;
 
         run_script(
             vec![
@@ -176,7 +176,7 @@ impl JobDispatcher {
             let run_details = RunDetails {
                 presigned_download_url,
                 run_command: "".to_string(),
-                project_id,
+                project_id: project_id.to_string(),
             };
 
             self.move_json_to_vm(&run_details).await?;

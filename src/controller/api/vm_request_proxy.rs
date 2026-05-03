@@ -36,17 +36,12 @@ impl VmRequestProxy {
         })
     }
 
-    fn extract_project_and_path(&self, req: &HttpRequest) -> Result<(Uuid, Uri), AppError> {
-        let host = req.connection_info().host().to_string();
+    fn extract_project_and_path(&self, req: &HttpRequest) -> Result<(String, Uri), AppError> {
+        let host = req.connection_info().host().to_owned();
 
         let uri = req.uri().to_owned();
 
-        let project_id = host
-            .split(".")
-            .next()
-            .unwrap()
-            .parse::<Uuid>()
-            .map_err(|e| AppError::InvalidProjectId(e.to_string()))?;
+        let project_id = host.split(".").next().unwrap().to_owned();
 
         Ok((project_id, uri))
     }
@@ -112,13 +107,13 @@ impl VmRequestProxy {
     ) -> Result<HttpResponse, AppError> {
         let (project_id, target_path) = self.extract_project_and_path(&req)?;
 
-        self.job_dispatcher.dispatch_run_job(project_id).await?;
+        self.job_dispatcher.dispatch_run_job(&project_id).await?;
 
         println!("Job dispatched");
 
         let vm_id = self
             .vm_pool
-            .get_from_pool(project_id)
+            .get_from_pool(&project_id)
             .ok_or(AppError::NoAvailableVm)?;
 
         self.wait_for_port(vm_id + 2, 3000, Duration::from_secs(30))
