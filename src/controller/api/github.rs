@@ -4,7 +4,7 @@ use std::{
 };
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use reqwest::Client;
+use reqwest::{Client, Method};
 use serde::Serialize;
 
 use crate::app_errors::AppError;
@@ -19,19 +19,17 @@ struct Claims {
 pub struct Github {
     app_id: u64,
     client: Client,
-    access_token: Option<String>,
     owner: String,
     repo: String,
 }
 
 impl Github {
-    pub fn new(app_id: u64, owner: String, repo: String) -> Self {
+    pub fn new(app_id: u64, owner: &str, repo: &str) -> Self {
         Self {
             app_id,
             client: Client::new(),
-            access_token: None,
-            owner,
-            repo,
+            owner: owner.to_string(),
+            repo: repo.to_string(),
         }
     }
 
@@ -55,12 +53,12 @@ impl Github {
         Ok(token)
     }
 
-    async fn app_get(&self, url: &str) -> Result<reqwest::Response, AppError> {
+    async fn app_req(&self, method: Method, url: &str) -> Result<reqwest::Response, AppError> {
         let jwt = self.generate_jwt()?;
 
         let res = self
             .client
-            .get(url)
+            .request(method, url)
             .bearer_auth(jwt)
             .header("User-Agent", "shipr-deployment")
             .header("Accept", "application/vnd.github+json")
@@ -70,41 +68,20 @@ impl Github {
         Ok(res)
     }
 
-    async fn ensure_access_token(&mut self) -> Result<(), AppError> {
-        if self.access_token.is_none() {
-            let token = self.get_installation_access_token().await?;
-            self.access_token = Some(token);
-        }
-        Ok(())
-    }
-
-    async fn api_get(&mut self, url: &str) -> Result<reqwest::Response, AppError> {
-        self.ensure_access_token().await?;
-
-        let token = self.access_token.as_ref().unwrap();
-
-        let res = self
-            .client
-            .get(url)
-            .bearer_auth(token)
-            .header("User-Agent", "shipr-deployment")
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await?;
-
-        Ok(res)
-    }
-
-    pub async fn get_installation_id(&self) -> Result<u32, AppError> {
+    async fn get_installation_id(&self) -> Result<u32, AppError> {
         let url = format!(
             "https://api.github.com/repos/{}/{}/installation",
             self.owner, self.repo
         );
 
-        let res = self.app_get(&url).await?;
+        println!("URL: {}", url);
+
+        let res = self.app_req(Method::GET, &url).await?;
         let json = res.json::<serde_json::Value>().await?;
 
         let id = json["id"].as_u64().unwrap() as u32;
+
+        println!("ID: {}", id);
 
         Ok(id)
     }
@@ -117,39 +94,15 @@ impl Github {
             installation_id
         );
 
-        let res = self.app_get(&url).await?;
+        println!("URL: {}", url);
+
+        let res = self.app_req(Method::POST, &url).await?;
         let json = res.json::<serde_json::Value>().await?;
+
+        println!("JSON: {}", json);
 
         let token = json["token"].as_str().unwrap();
 
         Ok(token.to_string())
-    }
-
-    async fn get_default_branch(&mut self) -> Result<String, AppError> {
-        let url = format!("https://api.github.com/repos/{}/{}", self.owner, self.repo);
-
-        let res = self.api_get(&url).await?;
-
-        let json = res.json::<serde_json::Value>().await?;
-
-        let branch = json["default_branch"].as_str().unwrap();
-
-        Ok(branch.to_string())
-    }
-
-    pub async fn get_commit_sha(&mut self) -> Result<String, AppError> {
-        let branch = self.get_default_branch().await?;
-
-        let url = format!(
-            "https://api.github.com/repos/{}/{}/commits/{}",
-            self.owner, self.repo, branch
-        );
-
-        let res = self.api_get(&url).await?;
-        let json = res.json::<serde_json::Value>().await?;
-
-        let sha = json["sha"].as_str().unwrap();
-
-        Ok(sha.to_string())
     }
 }

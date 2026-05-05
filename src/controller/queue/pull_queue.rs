@@ -1,20 +1,23 @@
-use futures::{StreamExt, channel};
+use futures::StreamExt;
 use lapin::{
     Channel, Connection, Queue,
-    options::BasicAckOptions,
+    options::{BasicAckOptions, QueueDeclareOptions},
     types::{AMQPValue, FieldTable, LongString, ShortString},
 };
 
-use crate::{app_errors::AppError, app_types::DeployDetails, controller::queue::lapin::Lapin};
+use crate::{
+    app_errors::AppError,
+    app_types::{DeployDetails, DeployReq},
+    controller::queue::lapin::Lapin,
+};
 
-pub struct PullQueue<'a> {
-    connection: &'a Connection,
+pub struct PullQueue {
     channel: Channel,
     queue: Queue,
 }
 
-impl<'a> PullQueue<'a> {
-    pub async fn new(lapin_conn: &'a Lapin) -> Result<Self, AppError> {
+impl PullQueue {
+    pub async fn new(lapin_conn: Lapin) -> Result<Self, AppError> {
         let connection = lapin_conn.get_connection().await;
 
         let channel = connection
@@ -30,28 +33,27 @@ impl<'a> PullQueue<'a> {
 
         let queue = channel
             .queue_declare(
-                ShortString::from("build_queue"),
-                Default::default(),
+                ShortString::from("pull_queue"),
+                QueueDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
                 queue_args,
             )
             .await
             .map_err(|e| AppError::QueueError(e.to_string()))?;
 
-        Ok(Self {
-            connection,
-            channel,
-            queue,
-        })
+        Ok(Self { channel, queue })
     }
 
-    pub async fn publish(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+    pub async fn publish(&self, deploy_details: &DeployReq) -> Result<(), AppError> {
         let message = serde_json::to_string(deploy_details)
             .map_err(|e| AppError::LapinError(e.to_string()))?;
 
         self.channel
             .basic_publish(
-                ShortString::from("build_queue"),
-                ShortString::from("build_queue"),
+                ShortString::from(""),
+                ShortString::from("pull_queue"),
                 Default::default(),
                 message.as_bytes(),
                 Default::default(),
@@ -59,10 +61,12 @@ impl<'a> PullQueue<'a> {
             .await
             .map_err(|e| AppError::LapinError(e.to_string()))?;
 
+        println!("Message published");
+
         Ok(())
     }
 
-    pub async fn consume(&self) -> Result<(), AppError> {
+    pub async fn consume(&self) -> Result<DeployReq, AppError> {
         let mut consumer = self
             .channel
             .basic_consume(
@@ -77,15 +81,17 @@ impl<'a> PullQueue<'a> {
         while let Some(delivery) = consumer.next().await {
             let delivery = delivery.map_err(|e| AppError::LapinError(e.to_string()))?;
 
-            let data = serde_json::from_slice::<DeployDetails>(&delivery.data)
+            let data = serde_json::from_slice::<DeployReq>(&delivery.data)
                 .map_err(|e| AppError::LapinError(e.to_string()))?;
 
             delivery
                 .ack(BasicAckOptions::default())
                 .await
                 .map_err(|e| AppError::LapinError(e.to_string()))?;
+
+            return Ok(data);
         }
 
-        Ok(())
+        Err(AppError::QueueError("No message received".to_string()))
     }
 }

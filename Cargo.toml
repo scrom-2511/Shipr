@@ -17,3 +17,4 @@ clap = {version = "4.6.0", features=["derive"]}
 actix-web = "4.13.0"
 aws-config = "1.8.16"
 aws-sdk-s3 = "1.131.0"
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }

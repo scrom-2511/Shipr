@@ -1,7 +1,16 @@
 use core::fmt;
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DeployReq {
+    pub url: String,
+    pub install: Vec<String>,
+    pub build: Vec<String>,
+    pub branch: String,
+    pub dist_dir: String,
+    pub home_dir: String,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct DeployDetails {
@@ -13,6 +22,9 @@ pub struct DeployDetails {
     pub home_dir: String,
     pub dist_dir: String,
     pub presigned_upload_url: String,
+    pub owner: String,
+    pub repo: String,
+    pub access_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -49,25 +61,19 @@ impl fmt::Display for ProjectType {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct InstallationEvent {
     pub action: String,
     pub installation: Installation,
-    pub repositories: Repository,
+    pub repositories: Vec<Repository>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Serialize, Clone)]
 pub struct Installation {
     pub id: u64,
-    pub account: Account,
 }
 
-#[derive(Deserialize)]
-pub struct Account {
-    pub login: String,
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, Debug, Serialize)]
 pub struct Repository {
     pub full_name: String,
 }
@@ -76,16 +82,9 @@ pub struct Repository {
 pub struct PushEvent {
     #[serde(rename = "ref")]
     pub ref_field: String,
-    pub before: String,
     pub after: String,
     pub repository: Repository,
-    pub pusher: Pusher,
-    pub forced: bool,
-    pub created: bool,
-    pub deleted: bool,
-    pub compare: String,
-    pub commits: Vec<Commit>,
-    pub head_commit: Commit,
+    pub installation: Installation,
 }
 
 #[derive(Deserialize)]

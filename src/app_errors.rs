@@ -15,6 +15,12 @@ pub enum AppError {
     #[error("serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
 
+    #[error("reqwest error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("Json Web Token error: {0}")]
+    JsonWebToken(#[from] jsonwebtoken::errors::Error),
+
     #[error("Lapin error: {0}")]
     LapinError(String),
 

@@ -1,4 +1,4 @@
-use std::{process::Command, thread::sleep, time::Duration};
+use std::{thread::sleep, time::Duration};
 
 use tokio::net::TcpStream;
 
@@ -10,6 +10,7 @@ use crate::{
         detect::detect_project_type,
         process::{run_script, run_script_bg},
     },
+    worker::api::githubapp::GithubApp,
 };
 
 pub struct JobExecuter;
@@ -30,7 +31,7 @@ impl JobExecuter {
     }
 
     fn get_project_path(&self, deploy_details: &DeployDetails) -> Result<String, AppError> {
-        let repo_name = self.extract_repo_name(&deploy_details.url)?;
+        let repo_name = deploy_details.project_id.to_owned();
 
         if deploy_details.home_dir.is_empty() {
             Ok(format!("/root/{}", repo_name))
@@ -40,15 +41,45 @@ impl JobExecuter {
     }
 
     async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
-        let git_clone_cmd = format!("git clone {}", deploy_details.url);
+        let mut github_app = GithubApp::new(
+            deploy_details.access_token.to_owned(),
+            deploy_details.owner.to_owned(),
+            deploy_details.repo.to_owned(),
+        );
 
-        run_script(vec![&git_clone_cmd], get_worker_dir())?;
+        let tarball_url = github_app.get_tarball_url().await?;
+        println!("tarball url is: {}", tarball_url);
+
+        let git_clone_cmd = format!(
+            "curl -Lo {}.tar.gz {} -H 'Accept: application/vnd.github.v3+json' -H 'Authorization: token {}'",
+            deploy_details.project_id, tarball_url, deploy_details.access_token
+        );
+
+        println!("git clone command is: {}", git_clone_cmd);
+
+        let extract_cmd = format!("tar -xzf {}.tar.gz", deploy_details.project_id);
+
+        println!("extract command is: {}", extract_cmd);
+
+        let rename_cmd = format!(
+            "mv {}-* {}",
+            deploy_details.project_id, deploy_details.project_id
+        );
+
+        println!("rename command is: {}", rename_cmd);
+
+        run_script(
+            vec![&git_clone_cmd, &extract_cmd, &rename_cmd],
+            get_worker_dir(),
+        )?;
 
         Ok(())
     }
 
     async fn install(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
         let project_path = self.get_project_path(deploy_details)?;
+
+        println!("project path is: {}", project_path);
 
         if !deploy_details.install_commands.is_empty() {
             let install_cmd = deploy_details.install_commands.join(" && ");
@@ -69,6 +100,8 @@ impl JobExecuter {
             project_path,
             config.install_commands.join(" && ")
         );
+
+        println!("final command is: {}", final_cmd);
 
         run_script(vec![&final_cmd], get_worker_dir())?;
 
@@ -96,14 +129,16 @@ impl JobExecuter {
             config.build_commands.join(" && ")
         );
 
+        println!("final command is: {}", final_cmd);
+
         run_script(vec![&final_cmd], get_worker_dir())?;
 
         let zip_cmd = format!(
             "cd /root/{}/{} && zip -r /root/{}.zip . /root/job.json",
-            self.extract_repo_name(&deploy_details.url)?,
-            deploy_details.dist_dir,
-            deploy_details.project_id
+            deploy_details.project_id, deploy_details.dist_dir, deploy_details.project_id
         );
+
+        println!("zip command is: {}", zip_cmd);
 
         run_script(vec![&zip_cmd], get_worker_dir())?;
 
@@ -165,14 +200,6 @@ impl JobExecuter {
         let config_run_cmd = config.run_command.unwrap();
 
         let final_cmd = format!("cd {} && {}", project_path, config_run_cmd);
-
-        // Command::new("bash")
-        //     .arg("-c")
-        //     .arg(&final_cmd)
-        //     .spawn()
-        //     .map_err(|e| AppError::CmdFailed(e.to_string()))?;
-
-        // run_script_vm(vec![&final_cmd])?;
 
         run_script_bg(vec![&final_cmd], get_worker_dir())?;
 

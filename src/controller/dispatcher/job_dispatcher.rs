@@ -1,13 +1,16 @@
 use core::fmt;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use futures::lock::Mutex;
+use jsonwebtoken::signature::digest::const_oid::Arc;
 use url::Url;
-use uuid::Uuid;
 
 use crate::app_errors::AppError;
-use crate::app_types::{DeployDetails, JobType, RunDetails};
+use crate::app_types::{DeployDetails, DeployReq, InstallationEvent, JobType, RunDetails};
 use crate::config::app_config::get_dir;
+use crate::controller::api::github::Github;
 use crate::controller::storage::s3::S3Service;
 use crate::controller::vm::firecracker::Firecracker;
 use crate::controller::vm::vm_pool::VmPool;
@@ -60,7 +63,7 @@ impl VmDetails for RunDetails {
 pub struct JobDispatcher {
     vm: Option<Firecracker>,
     vm_pool: VmPool,
-    s3_service: S3Service,
+    pub s3_service: S3Service,
 }
 
 impl JobDispatcher {
@@ -113,7 +116,7 @@ impl JobDispatcher {
         let job_type = vm_details.get_job_type().to_string().to_lowercase();
 
         let job_json_path = format!(
-            "/home/scrom/shipr/job_jsons/{}/{}.json",
+            "/home/scrom/code/shipr/job_jsons/{}/{}.json",
             job_type, project_id
         );
 

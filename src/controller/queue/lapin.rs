@@ -9,7 +9,7 @@ pub struct Lapin {
 impl Lapin {
     pub async fn new() -> Result<Self, AppError> {
         let conn = Connection::connect(
-            "amqp://guest:guest@localhost:5672/",
+            "amqp://guest:guest@localhost:5672/%2f",
             ConnectionProperties::default(),
         )
         .await
