@@ -1,44 +1,54 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use redis::AsyncCommands;
 
-use uuid::Uuid;
+use crate::{app_errors::AppError, controller::storage::redis::Redis};
 
 #[derive(Clone)]
 pub struct VmPool {
-    pool: Arc<Mutex<HashMap<String, u32>>>,
-    ideal_vms: Arc<Mutex<Vec<u32>>>,
+    redis: Redis,
 }
 
 impl VmPool {
-    pub fn new() -> Self {
-        Self {
-            pool: Arc::new(Mutex::new(HashMap::new())),
-            ideal_vms: Arc::new(Mutex::new(Vec::new())),
-        }
+    pub fn new(redis: Redis) -> Self {
+        Self { redis }
     }
 
-    pub fn add_to_pool(&self, project_id: &str, vm_id: u32) {
-        let mut pool = self.pool.lock().unwrap();
-        pool.insert(project_id.to_string(), vm_id);
+    pub async fn add_to_pool(&self, project_id: &str, vm_id: u32) -> Result<(), AppError> {
+        let mut conn = self.redis.get_conn().await?;
+
+        let _: () = conn.set(project_id, vm_id).await?;
+
+        Ok(())
     }
 
-    pub fn get_from_pool(&self, project_id: &str) -> Option<u32> {
-        let pool = self.pool.lock().unwrap();
-        pool.get(&project_id.to_string()).copied()
+    pub async fn get_from_pool(&self, project_id: &str) -> Result<Option<usize>, AppError> {
+        let mut conn = self.redis.get_conn().await?;
+
+        let vm_id = conn.get(project_id).await?;
+
+        Ok(vm_id)
     }
 
-    pub fn remove_from_pool(&self, project_id: &str) {
-        let mut pool = self.pool.lock().unwrap();
-        pool.remove(&project_id.to_string());
+    pub async fn remove_from_pool(&self, project_id: &str) -> Result<(), AppError> {
+        let mut conn = self.redis.get_conn().await?;
+
+        let _: () = conn.del(project_id).await?;
+
+        Ok(())
     }
 
-    pub fn add_to_ideal_vms(&self, vm_id: u32) {
-        let mut ideal_vms = self.ideal_vms.lock().unwrap();
-        ideal_vms.push(vm_id);
+    pub async fn add_to_ideal_vms(&self, vm_id: u32) -> Result<(), AppError> {
+        let mut conn = self.redis.get_conn().await?;
+
+        let _: () = conn.sadd("ideal_vms", vm_id).await?;
+
+        Ok(())
     }
 
-    pub fn get_from_ideal_vms(&self) -> Option<u32> {
-        let mut ideal_vms = self.ideal_vms.lock().unwrap();
-        ideal_vms.pop()
+    pub async fn get_from_ideal_vms(&self) -> Result<Option<u32>, AppError> {
+        let mut conn = self.redis.get_conn().await?;
+
+        let vm_id = conn.spop("ideal_vms").await?;
+
+        Ok(vm_id)
     }
 }
