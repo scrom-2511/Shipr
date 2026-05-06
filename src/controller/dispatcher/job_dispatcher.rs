@@ -1,16 +1,11 @@
 use core::fmt;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-
-use futures::lock::Mutex;
-use jsonwebtoken::signature::digest::const_oid::Arc;
 use url::Url;
 
 use crate::app_errors::AppError;
-use crate::app_types::{DeployDetails, DeployReq, InstallationEvent, JobType, RunDetails};
+use crate::app_types::{DeployDetails, JobType, RedeployDetails, RunDetails};
 use crate::config::app_config::get_dir;
-use crate::controller::api::github::Github;
 use crate::controller::storage::s3::S3Service;
 use crate::controller::vm::firecracker::Firecracker;
 use crate::controller::vm::vm_pool::VmPool;
@@ -21,6 +16,7 @@ impl fmt::Display for JobType {
         match self {
             JobType::Deploy => write!(f, "deploy"),
             JobType::Run => write!(f, "run"),
+            JobType::Redeploy => write!(f, "redeploy"),
         }
     }
 }
@@ -59,6 +55,20 @@ impl VmDetails for RunDetails {
     }
 }
 
+impl VmDetails for RedeployDetails {
+    fn get_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+
+    fn get_project_id(&self) -> String {
+        self.project_id.to_string()
+    }
+
+    fn get_job_type(&self) -> JobType {
+        JobType::Redeploy
+    }
+}
+
 #[derive(Clone)]
 pub struct JobDispatcher {
     vm: Option<Firecracker>,
@@ -85,8 +95,12 @@ impl JobDispatcher {
         Err(AppError::InvalidGitUrl)
     }
 
-    async fn get_or_create_vm(&mut self, project_id: &str) -> Result<(u32, bool), AppError> {
-        match self.vm_pool.get_from_pool(&project_id) {
+    async fn get_or_create_vm(&mut self, project_id: &str) -> Result<(u8, bool), AppError> {
+        let something = self.vm_pool.get_from_pool(&project_id).await?;
+
+        println!("{:?}", something);
+
+        match something {
             Some(id) => {
                 self.vm = Some(Firecracker::new(id));
                 Ok((id, false))
@@ -95,12 +109,13 @@ impl JobDispatcher {
                 let new_id = self
                     .vm_pool
                     .get_from_ideal_vms()
-                    .ok_or(AppError::NoAvailableVm)?;
+                    .await
+                    .map_err(|_| AppError::NoAvailableVm)?;
 
-                self.vm_pool.add_to_pool(&project_id, new_id);
+                self.vm_pool.add_to_pool(&project_id, new_id).await?;
                 self.vm = Some(Firecracker::new(new_id));
 
-                Ok((new_id as u32, true))
+                Ok((new_id, true))
             }
         }
     }
@@ -156,6 +171,28 @@ impl JobDispatcher {
             .as_ref()
             .unwrap()
             .execute_command("cd /root && ./worker job.json deploy")?;
+
+        Ok(())
+    }
+
+    pub async fn dispatch_redeploy_job(
+        &mut self,
+        redeploy_details: &RedeployDetails,
+    ) -> Result<(), AppError> {
+        self.get_or_create_vm(&redeploy_details.project_id).await?;
+        self.move_json_to_vm(redeploy_details).await?;
+
+        run_script(
+            vec![
+                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
+            ],
+            get_dir(),
+        )?;
+
+        self.vm
+            .as_ref()
+            .unwrap()
+            .execute_command("cd /root && ./worker job.json redeploy")?;
 
         Ok(())
     }
