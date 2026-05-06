@@ -142,9 +142,15 @@ impl JobExecuter {
 
         run_script(vec![&zip_cmd], get_worker_dir())?;
 
+        // For dev
+        let presigned_upload_url = deploy_details.presigned_upload_url.to_owned().replace(
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/",
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/s3/",
+        );
+
         let upload_cmd = format!(
             "curl -X PUT -T {}.zip '{}'",
-            deploy_details.project_id, deploy_details.presigned_upload_url
+            deploy_details.project_id, presigned_upload_url
         );
 
         run_script(vec![&upload_cmd], get_worker_dir())?;
@@ -171,10 +177,13 @@ impl JobExecuter {
 
         let project_id = &run_details.project_id;
 
-        let download_cmd = format!(
-            "curl -o {}.zip '{}'",
-            project_id, run_details.presigned_download_url
+        // For dev
+        let presigned_download_url = run_details.presigned_download_url.to_owned().replace(
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/",
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/s3/",
         );
+
+        let download_cmd = format!("curl -o {}.zip '{}'", project_id, presigned_download_url);
 
         run_script(vec![&download_cmd], get_worker_dir())?;
 
@@ -210,10 +219,13 @@ impl JobExecuter {
     pub async fn redeploy(&self, redeploy_details: &RedeployDetails) -> Result<(), AppError> {
         let project_id = redeploy_details.project_id.to_owned();
 
-        let download_cmd = format!(
-            "curl -o {}.zip '{}'",
-            &project_id, redeploy_details.presigned_download_url
+        // For dev
+        let presigned_download_url = redeploy_details.presigned_download_url.to_owned().replace(
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/",
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/s3/",
         );
+
+        let download_cmd = format!("curl -o {}.zip '{}'", &project_id, presigned_download_url);
 
         run_script(vec![&download_cmd], get_worker_dir())?;
 
@@ -229,7 +241,13 @@ impl JobExecuter {
 
         let mut job_json = serde_json::from_str::<DeployDetails>(&job_json_str)?;
 
-        job_json.presigned_upload_url = redeploy_details.presigned_upload_url.to_owned();
+        // For dev
+        let presigned_upload_url = redeploy_details.presigned_upload_url.to_owned().replace(
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/",
+            "https://francisco-unscholarlike-punctually.ngrok-free.dev/s3/",
+        );
+
+        job_json.presigned_upload_url = presigned_upload_url;
         job_json.access_token = redeploy_details.access_token.to_owned();
 
         self.execute(&job_json).await?;
