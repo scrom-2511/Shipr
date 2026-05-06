@@ -15,19 +15,15 @@ impl IdAllocator {
     }
 
     pub async fn get_current_ids(&self) -> Result<Vec<usize>, AppError> {
-        let ids = self.redis.get_client();
+        let mut conn = self.redis.get_conn().await?;
 
-        let mut conn = ids.get_multiplexed_async_connection().await?;
-
-        let current_ids: Vec<usize> = conn.smembers("current_ids").await?;
+        let current_ids = conn.smembers("current_ids").await?;
 
         Ok(current_ids)
     }
 
     pub async fn add_to_current_ids(&self, id: usize) -> Result<(), AppError> {
-        let ids = self.redis.get_client();
-
-        let mut conn = ids.get_multiplexed_async_connection().await?;
+        let mut conn = self.redis.get_conn().await?;
 
         let _: () = conn.sadd("current_ids", id).await?;
 
@@ -35,9 +31,7 @@ impl IdAllocator {
     }
 
     pub async fn remove_from_current_ids(&self, id: usize) -> Result<(), AppError> {
-        let ids = self.redis.get_client();
-
-        let mut conn = ids.get_multiplexed_async_connection().await?;
+        let mut conn = self.redis.get_conn().await?;
 
         let _: () = conn.srem("current_ids", id).await?;
 
