@@ -1,10 +1,10 @@
-use std::{thread::sleep, time::Duration};
+use std::{fs, thread::sleep, time::Duration};
 
 use tokio::net::TcpStream;
 
 use crate::{
     app_errors::AppError,
-    app_types::{DeployDetails, RunDetails},
+    app_types::{DeployDetails, RedeployDetails, RunDetails},
     config::{app_config::get_worker_dir, project_default_config::get_default_config},
     infra::{
         detect::detect_project_type,
@@ -204,6 +204,36 @@ impl JobExecuter {
         run_script_bg(vec![&final_cmd], get_worker_dir())?;
 
         println!("Run command completed");
+        Ok(())
+    }
+
+    pub async fn redeploy(&self, redeploy_details: &RedeployDetails) -> Result<(), AppError> {
+        let project_id = redeploy_details.project_id.to_owned();
+
+        let download_cmd = format!(
+            "curl -o {}.zip '{}'",
+            &project_id, redeploy_details.presigned_download_url
+        );
+
+        run_script(vec![&download_cmd], get_worker_dir())?;
+
+        let unzip_cmd = format!("unzip {}.zip -d /root/{}", project_id, project_id);
+
+        run_script(vec![&unzip_cmd], get_worker_dir())?;
+
+        let copy_job_json = format!("cp /root/{}/job.json /root/", project_id);
+
+        run_script(vec![&copy_job_json], get_worker_dir())?;
+
+        let job_json_str = fs::read_to_string("/root/job.json")?;
+
+        let mut job_json = serde_json::from_str::<DeployDetails>(&job_json_str)?;
+
+        job_json.presigned_upload_url = redeploy_details.presigned_upload_url.to_owned();
+        job_json.access_token = redeploy_details.access_token.to_owned();
+
+        self.execute(&job_json).await?;
+
         Ok(())
     }
 }
