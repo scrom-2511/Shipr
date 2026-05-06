@@ -1,4 +1,4 @@
-use redis::{AsyncCommands, Client, aio::MultiplexedConnection};
+use redis::{Client, aio::MultiplexedConnection};
 
 use crate::app_errors::AppError;
 
@@ -22,21 +22,5 @@ impl Redis {
         let conn = self.client.get_multiplexed_async_connection().await?;
 
         Ok(conn)
-    }
-
-    pub async fn set(&self, key: &str, value: &str) -> Result<(), AppError> {
-        let mut conn = self.client.get_multiplexed_async_connection().await?;
-
-        let _: () = conn.set(key, value).await?;
-
-        Ok(())
-    }
-
-    pub async fn get(&self, key: &str) -> Result<String, AppError> {
-        let mut conn = self.client.get_multiplexed_async_connection().await?;
-
-        let value = conn.get(key).await?;
-
-        Ok(value)
     }
 }
