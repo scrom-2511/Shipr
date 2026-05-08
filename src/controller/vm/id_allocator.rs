@@ -2,48 +2,35 @@ use redis::AsyncCommands;
 
 use crate::{app_errors::AppError, controller::storage::redis::Redis};
 
-const MAX_IDS: usize = 64;
+const MAX_IDS: u8 = 64;
 
 #[derive(Clone)]
 pub struct IdAllocator {
     redis: Redis,
 }
 
+const CURRENT_IDS: &str = "current_ids";
+
 impl IdAllocator {
     pub fn new(redis: Redis) -> Self {
         Self { redis }
     }
 
-    pub async fn get_current_ids(&self) -> Result<Vec<usize>, AppError> {
+    async fn remove_from_current_ids(&self, id: u8) -> Result<(), AppError> {
         let mut conn = self.redis.get_conn().await?;
 
-        let current_ids = conn.smembers("current_ids").await?;
-
-        Ok(current_ids)
-    }
-
-    pub async fn add_to_current_ids(&self, id: usize) -> Result<(), AppError> {
-        let mut conn = self.redis.get_conn().await?;
-
-        let _: () = conn.sadd("current_ids", id).await?;
+        let _: () = conn.srem(CURRENT_IDS, id).await?;
 
         Ok(())
     }
 
-    pub async fn remove_from_current_ids(&self, id: usize) -> Result<(), AppError> {
+    pub async fn allocate_id(&self) -> Result<u8, AppError> {
         let mut conn = self.redis.get_conn().await?;
-
-        let _: () = conn.srem("current_ids", id).await?;
-
-        Ok(())
-    }
-
-    pub async fn allocate_id(&self) -> Result<usize, AppError> {
-        let ids = self.get_current_ids().await?;
 
         for id in 0..MAX_IDS {
-            if !ids.contains(&id) {
-                self.add_to_current_ids(id).await?;
+            let inserted: u8 = conn.sadd(CURRENT_IDS, id).await?;
+
+            if inserted == 1 {
                 return Ok(id);
             }
         }
@@ -53,7 +40,7 @@ impl IdAllocator {
         ))
     }
 
-    pub async fn release_id(&self, id: usize) -> Result<(), AppError> {
+    pub async fn release_id(&self, id: u8) -> Result<(), AppError> {
         self.remove_from_current_ids(id).await?;
 
         Ok(())
