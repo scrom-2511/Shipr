@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use aws_config::BehaviorVersion;
-use aws_sdk_s3::{Client, presigning::PresigningConfig};
+use aws_sdk_s3::{Client, config::Builder, presigning::PresigningConfig};
 
 use crate::app_errors::AppError;
 
@@ -14,12 +14,14 @@ pub struct S3Service {
 impl S3Service {
     pub async fn new() -> Self {
         let config = aws_config::defaults(BehaviorVersion::latest())
-            .endpoint_url("http://172.16.0.1:9000")
+            .endpoint_url("https://francisco-unscholarlike-punctually.ngrok-free.dev/")
             .region("us-east-1")
             .load()
             .await;
 
-        let client = Client::new(&config);
+        let s3_config = Builder::from(&config).force_path_style(true).build();
+
+        let client = Client::from_conf(s3_config);
 
         Self {
             client,

@@ -8,6 +8,7 @@ use crate::app_types::{DeployDetails, JobType, RedeployDetails, RunDetails};
 use crate::config::app_config::get_dir;
 use crate::controller::storage::s3::S3Service;
 use crate::controller::vm::firecracker::Firecracker;
+use crate::controller::vm::id_allocator::IdAllocator;
 use crate::controller::vm::vm_pool::VmPool;
 use crate::infra::process::run_script;
 
@@ -74,14 +75,16 @@ pub struct JobDispatcher {
     vm: Option<Firecracker>,
     vm_pool: VmPool,
     pub s3_service: S3Service,
+    id_allocator: IdAllocator,
 }
 
 impl JobDispatcher {
-    pub fn new(vm_pool: VmPool, s3_service: S3Service) -> Self {
+    pub fn new(vm_pool: VmPool, s3_service: S3Service, id_allocator: IdAllocator) -> Self {
         Self {
             vm: None,
             vm_pool,
             s3_service,
+            id_allocator,
         }
     }
 
@@ -95,14 +98,18 @@ impl JobDispatcher {
         Err(AppError::InvalidGitUrl)
     }
 
-    async fn get_or_create_vm(&mut self, project_id: &str) -> Result<(u8, bool), AppError> {
-        let something = self.vm_pool.get_from_pool(&project_id).await?;
-
-        println!("{:?}", something);
+    async fn get_or_create_vm(
+        &mut self,
+        project_id: &str,
+        job_type: JobType,
+    ) -> Result<(u8, bool), AppError> {
+        let something = self.vm_pool.get_from_pool(project_id, &job_type).await?;
 
         match something {
             Some(id) => {
                 self.vm = Some(Firecracker::new(id));
+
+                println!("VM found in pool: {}", id);
                 Ok((id, false))
             }
             None => {
@@ -110,10 +117,15 @@ impl JobDispatcher {
                     .vm_pool
                     .get_from_ideal_vms()
                     .await
-                    .map_err(|_| AppError::NoAvailableVm)?;
+                    .map_err(|_| AppError::NoAvailableVm)?
+                    .unwrap();
 
-                self.vm_pool.add_to_pool(&project_id, new_id).await?;
+                self.vm_pool
+                    .add_to_pool(project_id, &job_type, new_id)
+                    .await?;
                 self.vm = Some(Firecracker::new(new_id));
+
+                println!("VM from ideal: {}", new_id);
 
                 Ok((new_id, true))
             }
@@ -123,6 +135,8 @@ impl JobDispatcher {
     async fn move_json_to_vm(&self, vm_details: &impl VmDetails) -> Result<(), AppError> {
         let vm = self.vm.as_ref().expect("VM not found");
         vm.get_base_id();
+
+        println!("vm base_id is: {}", vm.get_base_id());
 
         let job_json = vm_details.get_json();
 
@@ -157,13 +171,22 @@ impl JobDispatcher {
         deploy_details: &DeployDetails,
     ) -> Result<(), AppError> {
         self.git_url_validator(&deploy_details.url)?;
-        self.get_or_create_vm(&deploy_details.project_id).await?;
+
+        let (vm_id, _) = self
+            .get_or_create_vm(&deploy_details.project_id, JobType::Deploy)
+            .await?;
+
         self.move_json_to_vm(deploy_details).await?;
 
+        let base_id = vm_id * 4;
+
+        let vm_ip = format!("172.16.0.{}", base_id + 2);
+
         run_script(
-            vec![
-                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
-            ],
+            vec![&format!(
+                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@{}:/root/worker",
+                vm_ip
+            )],
             get_dir(),
         )?;
 
@@ -179,13 +202,21 @@ impl JobDispatcher {
         &mut self,
         redeploy_details: &RedeployDetails,
     ) -> Result<(), AppError> {
-        self.get_or_create_vm(&redeploy_details.project_id).await?;
+        let (vm_id, _) = self
+            .get_or_create_vm(&redeploy_details.project_id, JobType::Redeploy)
+            .await?;
+
         self.move_json_to_vm(redeploy_details).await?;
 
+        let base_id = vm_id * 4;
+
+        let vm_ip = format!("172.16.0.{}", base_id + 2);
+
         run_script(
-            vec![
-                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
-            ],
+            vec![&format!(
+                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@{}:/root/worker",
+                vm_ip
+            )],
             get_dir(),
         )?;
 
@@ -198,14 +229,23 @@ impl JobDispatcher {
     }
 
     pub async fn dispatch_run_job(&mut self, project_id: &str) -> Result<(), AppError> {
-        let (_, is_new) = self.get_or_create_vm(&project_id).await?;
+        let (vm_id, is_new) = self.get_or_create_vm(&project_id, JobType::Run).await?;
+
+        println!("is new is: {}", is_new);
+
+        let base_id = vm_id * 4;
+
+        let vm_ip = format!("172.16.0.{}", base_id + 2);
 
         run_script(
-            vec![
-                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@172.16.0.2:/root/worker",
-            ],
+            vec![&format!(
+                "scp -r -i /home/scrom/ubuntu.id_rsa /home/scrom/code/shipr/target/release/worker root@{}:/root/worker",
+                vm_ip
+            )],
             get_dir(),
         )?;
+
+        println!("cp cmd run completed");
 
         if is_new == true {
             let presigned_download_url = self
@@ -221,10 +261,18 @@ impl JobDispatcher {
 
             self.move_json_to_vm(&run_details).await?;
 
-            // self.vm
-            //     .as_ref()
-            //     .unwrap()
-            //     .execute_command("cd /root && nohup ./worker job.json run > /dev/null 2>&1 &")?;
+            let id_allocator = self.id_allocator.clone();
+            let vm_pool = self.vm_pool.clone();
+
+            tokio::task::spawn(async move {
+                let new_id = id_allocator.allocate_id().await?;
+                let mut new_vm = Firecracker::new(new_id);
+
+                new_vm.create_vm().await?;
+                vm_pool.add_to_ideal_vms(new_id).await?;
+
+                Ok::<(), AppError>(())
+            });
 
             self.vm
                 .as_ref()

@@ -1,7 +1,7 @@
 use std::fs;
 
 use shipr::{
-    app_types::{DeployDetails, RunDetails},
+    app_types::{DeployDetails, JobType, RedeployDetails, RunDetails},
     worker::executer::job_executer::JobExecuter,
 };
 
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let worker = JobExecuter::new();
 
-            worker.execute(&deploy_details).await?;
+            worker.execute(&deploy_details, JobType::Deploy).await?;
         }
         "run" => {
             let run_details = serde_json::from_str::<RunDetails>(&content).unwrap();
@@ -34,6 +34,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let worker = JobExecuter::new();
 
             worker.run(&run_details).await?;
+        }
+        "redeploy" => {
+            let redeploy_details = serde_json::from_str::<RedeployDetails>(&content).unwrap();
+
+            let worker = JobExecuter::new();
+
+            worker
+                .redeploy(&redeploy_details, JobType::Redeploy)
+                .await?;
         }
         _ => {
             eprintln!("Invalid job type");

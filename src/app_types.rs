@@ -28,15 +28,26 @@ pub struct DeployDetails {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct RedeployDetails {
+    pub project_id: String,
+    pub presigned_upload_url: String,
+    pub presigned_download_url: String,
+    pub access_token: String,
+    pub commit_hash: String,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct RunDetails {
     pub presigned_download_url: String,
     pub run_command: String,
     pub project_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub enum JobType {
     Deploy,
     Run,
+    Redeploy,
 }
 
 #[derive(Clone)]
@@ -78,22 +89,22 @@ pub struct Repository {
     pub full_name: String,
 }
 
-#[derive(Deserialize)]
-pub struct PushEvent {
+#[derive(Serialize, Deserialize)]
+pub struct RedeployEvent {
     #[serde(rename = "ref")]
     pub ref_field: String,
     pub after: String,
-    pub repository: Repository,
+    pub repositories: Vec<Repository>,
     pub installation: Installation,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Pusher {
     pub name: String,
     pub email: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Commit {
     pub id: String,
     pub message: String,
@@ -102,9 +113,15 @@ pub struct Commit {
     pub modified: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EventType {
     Install(InstallationEvent),
-    Push(PushEvent),
+    Push(RedeployEvent),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KillVmReq {
+    pub project_id: String,
+    pub job_type: JobType,
 }

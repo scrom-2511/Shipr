@@ -1,3 +1,5 @@
+use std::net::UdpSocket;
+
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
     web::{self},
@@ -72,7 +74,7 @@ pub async fn cli(
         }
 
         Commands::Serve => {
-            serve(vm_pool, id_allocator, s3_service).await?;
+            serve(id_allocator, vm_pool, s3_service).await?;
         }
 
         Commands::Deploy {
@@ -96,11 +98,21 @@ pub async fn cli(
         }
 
         Commands::Test => {
-            let github = Github::new(3566236, "scrom-2511", "shipr_test_project");
+            // let vec = vec![0, 1, 2, 3, 4, 5, 6];
 
-            let token = github.get_installation_access_token().await?;
+            // for i in vec {
+            //     let firecracker = Firecracker::new(i);
+            //     firecracker.destroy_vm().await?;
+            //     println!("VM {} destroyed", i);
+            // }
 
-            println!("Token: {}", token);
+            let socket = UdpSocket::bind("0.0.0.0:0")?;
+
+            socket.connect("8.8.8.8:80")?;
+
+            let local_ip = socket.local_addr()?.ip();
+
+            println!("Default IP: {}", local_ip);
         }
     }
 

@@ -21,28 +21,32 @@ pub async fn proxy(
 }
 
 pub async fn serve(
-    vm_pool: VmPool,
     id_allocator: IdAllocator,
+    vm_pool: VmPool,
     s3_service: S3Service,
 ) -> Result<(), AppError> {
-    let job_dispatcher = JobDispatcher::new(vm_pool.clone(), s3_service.clone());
+    let job_dispatcher =
+        JobDispatcher::new(vm_pool.clone(), s3_service.clone(), id_allocator.clone());
 
     let vm_request_proxy = web::Data::new(Mutex::new(VmRequestProxy::new(
         vm_pool.clone(),
-        id_allocator.clone(),
         job_dispatcher.clone(),
+        id_allocator.clone(),
     )?));
 
     for _ in 0..1 {
         let id_allocator = id_allocator.clone();
+
         let vm_pool = vm_pool.clone();
 
         task::spawn(async move {
-            let new_id = id_allocator.allocate_id().await? as u32;
+            let new_id = id_allocator.allocate_id().await?;
+            println!("New ID serve: {}", new_id);
+
             let mut new_vm = Firecracker::new(new_id);
 
             new_vm.create_vm().await?;
-            vm_pool.add_to_ideal_vms(new_id);
+            vm_pool.add_to_ideal_vms(new_id).await?;
 
             Ok::<(), AppError>(())
         });
@@ -55,7 +59,7 @@ pub async fn serve(
             .app_data(vm_request_proxy.clone())
             .default_service(web::to(proxy))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 3001))?
     .run()
     .await?;
 

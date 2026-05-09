@@ -1,5 +1,7 @@
 use crate::app_errors::AppError;
+use crate::app_types::JobType;
 use crate::controller::dispatcher::job_dispatcher::JobDispatcher;
+use crate::controller::vm::firecracker::Firecracker;
 use crate::controller::vm::id_allocator::IdAllocator;
 use crate::controller::vm::vm_pool::VmPool;
 use actix_web::http::Uri;
@@ -10,29 +12,28 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use url::Url;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct VmRequestProxy {
     vm_pool: VmPool,
-    id_allocator: IdAllocator,
     client: Client,
     job_dispatcher: JobDispatcher,
+    id_allocator: IdAllocator,
 }
 
 impl VmRequestProxy {
     pub fn new(
         vm_pool: VmPool,
-        id_allocator: IdAllocator,
         job_dispatcher: JobDispatcher,
+        id_allocator: IdAllocator,
     ) -> Result<Self, AppError> {
         let client = Client::new();
 
         Ok(Self {
             vm_pool,
-            id_allocator,
             client,
             job_dispatcher,
+            id_allocator,
         })
     }
 
@@ -46,9 +47,12 @@ impl VmRequestProxy {
         Ok((project_id, uri))
     }
 
-    fn build_target_url(&self, vm_id: u32, uri: Uri) -> Url {
+    fn build_target_url(&self, vm_id: u8, uri: Uri) -> Url {
         let path = uri.path().trim_start_matches('/');
-        let target_url_str = format!("http://172.16.0.{}:3000/{}", vm_id + 2, path);
+        let base_id = vm_id * 4;
+        let vm_ip = format!("172.16.0.{}", base_id + 2);
+        let target_url_str = format!("http://{}:3000/{}", vm_ip, path);
+
         Url::from_str(&target_url_str).unwrap()
     }
 
@@ -113,24 +117,18 @@ impl VmRequestProxy {
 
         let vm_id = self
             .vm_pool
-            .get_from_pool(&project_id)
-            .ok_or(AppError::NoAvailableVm)?;
+            .get_from_pool(&project_id, &JobType::Run)
+            .await
+            .map_err(|_| AppError::NoAvailableVm)?;
 
-        self.wait_for_port(vm_id + 2, 3000, Duration::from_secs(30))
+        let vm_id = if let Some(id) = vm_id {
+            id
+        } else {
+            return Err(AppError::NoAvailableVm);
+        };
+
+        self.wait_for_port(vm_id, 3000, Duration::from_secs(30))
             .await?;
-
-        // let id_allocator = id_allocator.clone();
-        // let vm_pool = vm_pool.clone();
-
-        // task::spawn(async move {
-        //     let new_id = id_allocator.allocate_id().await? as u32;
-        //     let mut new_vm = Firecracker::new(new_id, ProjectType::Node);
-
-        //     new_vm.create_vm().await?;
-        //     vm_pool.add_to_ideal_vms(new_id);
-
-        //     Ok::<(), AppError>(())
-        // });
 
         let target_url = self.build_target_url(vm_id, target_path);
 
@@ -141,11 +139,14 @@ impl VmRequestProxy {
 
     async fn wait_for_port(
         &self,
-        vm_ip: u32,
+        vm_id: u8,
         port: u16,
         max_wait: Duration,
     ) -> Result<(), AppError> {
-        let addr = format!("172.16.0.{}:{}", vm_ip, port);
+        let base_id = vm_id * 4;
+        let vm_ip = format!("172.16.0.{}", base_id + 2);
+        let addr = format!("{}:{}", vm_ip, port);
+
         let deadline = tokio::time::Instant::now() + max_wait;
 
         loop {

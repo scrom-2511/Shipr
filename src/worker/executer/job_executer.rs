@@ -1,16 +1,16 @@
-use std::{fs, thread::sleep, time::Duration};
+use std::{fs, net::UdpSocket, thread::sleep, time::Duration};
 
 use tokio::net::TcpStream;
 
 use crate::{
     app_errors::AppError,
-    app_types::{DeployDetails, RedeployDetails, RunDetails},
+    app_types::{DeployDetails, JobType, RedeployDetails, RunDetails},
     config::{app_config::get_worker_dir, project_default_config::get_default_config},
     infra::{
         detect::detect_project_type,
         process::{run_script, run_script_bg},
     },
-    worker::api::githubapp::GithubApp,
+    worker::api::{githubapp::GithubApp, host::Host},
 };
 
 pub struct JobExecuter;
@@ -158,22 +158,47 @@ impl JobExecuter {
         Ok(())
     }
 
-    pub async fn execute(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
+    pub async fn execute(
+        &self,
+        deploy_details: &DeployDetails,
+        job_type: JobType,
+    ) -> Result<(), AppError> {
         self.pull(deploy_details).await?;
 
         self.install(deploy_details).await?;
 
         self.build(deploy_details).await?;
 
+        let host = Host::new();
+
+        host.kill_vm(deploy_details.project_id.to_owned(), job_type)
+            .await?;
+
         Ok(())
     }
 
     pub async fn run(&self, run_details: &RunDetails) -> Result<(), AppError> {
-        let port_exists = TcpStream::connect("172.16.0.2:3000").await.is_ok();
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
+
+        socket.connect("8.8.8.8:80")?;
+
+        let local_ip = socket.local_addr()?.ip();
+
+        let port_exists = TcpStream::connect(format!("{}:3000", local_ip))
+            .await
+            .is_ok();
+
+        println!("port exists is: {}", port_exists);
 
         if port_exists {
             return Ok(());
         }
+
+        let host = Host::new();
+
+        host.start_watchdog(run_details.project_id.to_owned(), JobType::Run);
+
+        host.heartbeat().await;
 
         let project_id = &run_details.project_id;
 
@@ -216,7 +241,11 @@ impl JobExecuter {
         Ok(())
     }
 
-    pub async fn redeploy(&self, redeploy_details: &RedeployDetails) -> Result<(), AppError> {
+    pub async fn redeploy(
+        &self,
+        redeploy_details: &RedeployDetails,
+        job_type: JobType,
+    ) -> Result<(), AppError> {
         let project_id = redeploy_details.project_id.to_owned();
 
         // For dev
@@ -250,7 +279,7 @@ impl JobExecuter {
         job_json.presigned_upload_url = presigned_upload_url;
         job_json.access_token = redeploy_details.access_token.to_owned();
 
-        self.execute(&job_json).await?;
+        self.execute(&job_json, job_type).await?;
 
         Ok(())
     }

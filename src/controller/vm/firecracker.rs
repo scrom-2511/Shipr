@@ -12,13 +12,13 @@ use std::{
 #[derive(Clone)]
 pub struct Firecracker {
     api_socket: String,
-    vm_id: u32,
+    vm_id: u8,
     client: reqwest::Client,
-    base_id: u32,
+    base_id: u8,
 }
 
 impl Firecracker {
-    pub fn new(vm_id: u32) -> Self {
+    pub fn new(vm_id: u8) -> Self {
         let api_socket = format!("/tmp/firecracker-{}.socket", vm_id);
 
         let path: &str = api_socket.as_ref();
@@ -38,8 +38,8 @@ impl Firecracker {
         }
     }
 
-    pub fn get_base_id(&self) -> u32 {
-        self.vm_id
+    pub fn get_base_id(&self) -> u8 {
+        self.base_id
     }
 
     fn init_vm(&mut self) -> Result<(), AppError> {
@@ -216,7 +216,12 @@ impl Firecracker {
     }
 
     async fn setup_ssh(&self) -> Result<(), AppError> {
-        self.execute_command("ip route add default via 172.16.0.1 dev eth0")?;
+        self.execute_command(&format!(
+            "ip route add default via 172.16.0.{} dev eth0",
+            self.base_id + 1
+        ))?;
+
+        println!("ip 172.16.0.{}", self.base_id + 1);
         self.execute_command("echo 'nameserver 8.8.8.8' > /etc/resolv.conf")?;
 
         Ok(())

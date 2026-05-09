@@ -9,7 +9,7 @@ pub struct Redis {
 
 impl Redis {
     pub fn new() -> Self {
-        let client = Client::open("redis://default:gQAAAAAAAYZ4AAIgcDE1YmJjNmZmN2NlZjI0OTM0YmFmNmU3MjRkZGNjMDgzOA@steady-jackal-99960.upstash.io:6379").unwrap();
+        let client = Client::open("rediss://default:gQAAAAAAAYZ4AAIgcDE1YmJjNmZmN2NlZjI0OTM0YmFmNmU3MjRkZGNjMDgzOA@steady-jackal-99960.upstash.io:6379").unwrap();
 
         Self { client }
     }

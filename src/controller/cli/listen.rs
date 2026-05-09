@@ -5,7 +5,9 @@ use futures::lock::Mutex;
 
 use crate::{
     app_errors::AppError,
-    app_types::{DeployDetails, DeployReq, EventType, InstallationEvent, RedeployDetails},
+    app_types::{
+        DeployDetails, DeployReq, EventType, InstallationEvent, KillVmReq, RedeployDetails,
+    },
     controller::{
         api::github::Github,
         dispatcher::job_dispatcher::JobDispatcher,
@@ -16,6 +18,32 @@ use crate::{
 };
 
 type InstallationStore = web::Data<Mutex<HashMap<String, InstallationEvent>>>;
+
+async fn kill_vm_handler(
+    body: web::Bytes,
+    vm_pool: web::Data<VmPool>,
+    id_allocator: web::Data<IdAllocator>,
+) -> Result<HttpResponse, AppError> {
+    let kill_vm_req = serde_json::from_slice::<KillVmReq>(&body).unwrap();
+
+    println!("Kill VM request: {:?}", kill_vm_req);
+
+    let project_id = kill_vm_req.project_id;
+    let job_type = kill_vm_req.job_type;
+
+    let vm_id = vm_pool
+        .get_from_pool(&project_id, &job_type)
+        .await?
+        .unwrap();
+
+    let new_vm = Firecracker::new(vm_id);
+
+    new_vm.destroy_vm().await?;
+    vm_pool.remove_from_pool(&project_id, &job_type).await?;
+    id_allocator.release_id(vm_id).await?;
+
+    Ok(HttpResponse::Ok().finish())
+}
 
 async fn github_webhook(
     body: web::Bytes,
@@ -32,24 +60,26 @@ async fn github_webhook(
 
     match event {
         EventType::Install(installation_event) => {
-            let url = format!(
-                "https://github.com/{}",
-                installation_event.repositories[0].full_name
-            );
+            if installation_event.action == "created" {
+                let url = format!(
+                    "https://github.com/{}",
+                    installation_event.repositories[0].full_name
+                );
 
-            println!("the key url is: {}", url);
+                println!("the key url is: {}", url);
 
-            installation_ids
-                .lock()
-                .await
-                .insert(url.clone(), installation_event);
+                installation_ids
+                    .lock()
+                    .await
+                    .insert(url.clone(), installation_event);
 
-            println!("Installation event stored");
+                println!("Installation event stored");
 
-            println!(
-                "installation_ids from fn: {:?}",
-                installation_ids.lock().await
-            );
+                println!(
+                    "installation_ids from fn: {:?}",
+                    installation_ids.lock().await
+                );
+            }
         }
         EventType::Push(redeploy_event) => {
             redeploy_queue.publish(redeploy_event).await.unwrap();
@@ -87,14 +117,18 @@ pub async fn listen(
     let installation_ids: InstallationStore =
         web::Data::new(Mutex::new(HashMap::<String, InstallationEvent>::new()));
 
-    let job_dispatcher = JobDispatcher::new(vm_pool.clone(), s3_service.clone());
+    let job_dispatcher =
+        JobDispatcher::new(vm_pool.clone(), s3_service.clone(), id_allocator.clone());
 
     for _ in 0..1 {
-        let new_id = id_allocator.allocate_id().await? as u32;
+        let new_id = id_allocator.allocate_id().await?;
+
+        println!("New ID listen: {}", new_id);
+
         let mut new_vm = Firecracker::new(new_id);
 
         new_vm.create_vm().await?;
-        vm_pool.add_to_ideal_vms(new_id);
+        vm_pool.add_to_ideal_vms(new_id).await?;
     }
 
     let lapin_conn = Lapin::new().await?;
@@ -106,6 +140,8 @@ pub async fn listen(
     println!("Queue created");
 
     {
+        let id_allocator = id_allocator.clone();
+        let vm_pool = vm_pool.clone();
         let deploy_queue = deploy_queue.clone();
         let installation_ids = installation_ids.clone();
         let mut job_dispatcher = job_dispatcher.clone();
@@ -177,6 +213,19 @@ pub async fn listen(
                     access_token,
                 };
 
+                let id_allocator = id_allocator.clone();
+                let vm_pool = vm_pool.clone();
+
+                tokio::task::spawn(async move {
+                    let new_id = id_allocator.allocate_id().await?;
+                    let mut new_vm = Firecracker::new(new_id);
+
+                    new_vm.create_vm().await?;
+                    vm_pool.add_to_ideal_vms(new_id).await?;
+
+                    Ok::<(), AppError>(())
+                });
+
                 if let Err(e) = job_dispatcher.dispatch_deploy_job(&deploy_details).await {
                     eprintln!("Job dispatch failed: {:?}", e);
                 }
@@ -185,6 +234,8 @@ pub async fn listen(
     }
 
     {
+        let id_allocator = id_allocator.clone();
+        let vm_pool = vm_pool.clone();
         let redeploy_queue = redeploy_queue.clone();
         let mut job_dispatcher = job_dispatcher.clone();
         let s3_service = s3_service.clone();
@@ -232,6 +283,19 @@ pub async fn listen(
                     access_token,
                 };
 
+                let id_allocator = id_allocator.clone();
+                let vm_pool = vm_pool.clone();
+
+                tokio::task::spawn(async move {
+                    let new_id = id_allocator.allocate_id().await?;
+                    let mut new_vm = Firecracker::new(new_id);
+
+                    new_vm.create_vm().await?;
+                    vm_pool.add_to_ideal_vms(new_id).await?;
+
+                    Ok::<(), AppError>(())
+                });
+
                 if let Err(e) = job_dispatcher
                     .dispatch_redeploy_job(&redeploy_details)
                     .await
@@ -242,15 +306,24 @@ pub async fn listen(
         });
     }
 
+    let id_allocator = id_allocator.clone();
+    let vm_pool = vm_pool.clone();
+
+    let id_allocator = web::Data::new(id_allocator);
+    let vm_pool = web::Data::new(vm_pool);
+
     HttpServer::new(move || {
         App::new()
             .app_data(installation_ids.clone())
             .app_data(deploy_queue.clone())
             .app_data(redeploy_queue.clone())
+            .app_data(id_allocator.clone())
+            .app_data(vm_pool.clone())
+            .route("/kill_vm", web::post().to(kill_vm_handler))
             .route("/webhook/github", web::post().to(github_webhook))
             .route("/deploy", web::post().to(deploy_handler))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 3000))?
     .run()
     .await?;
 

@@ -1,23 +1,19 @@
 use futures::StreamExt;
 use lapin::{
-    Channel, Connection, Queue,
+    Channel, Queue,
     options::{BasicAckOptions, QueueDeclareOptions},
     types::{AMQPValue, FieldTable, LongString, ShortString},
 };
 
-use crate::{
-    app_errors::AppError,
-    app_types::{DeployDetails, DeployReq},
-    controller::queue::lapin::Lapin,
-};
+use crate::{app_errors::AppError, app_types::DeployReq, controller::queue::lapin::Lapin};
 
-pub struct PullQueue {
+pub struct DeployQueue {
     channel: Channel,
     queue: Queue,
 }
 
-impl PullQueue {
-    pub async fn new(lapin_conn: Lapin) -> Result<Self, AppError> {
+impl DeployQueue {
+    pub async fn new(lapin_conn: &Lapin) -> Result<Self, AppError> {
         let connection = lapin_conn.get_connection().await;
 
         let channel = connection
@@ -33,7 +29,7 @@ impl PullQueue {
 
         let queue = channel
             .queue_declare(
-                ShortString::from("pull_queue"),
+                ShortString::from("deploy_queue"),
                 QueueDeclareOptions {
                     durable: true,
                     ..Default::default()
@@ -47,15 +43,12 @@ impl PullQueue {
     }
 
     pub async fn publish(&self, deploy_details: &DeployReq) -> Result<(), AppError> {
-        let message = serde_json::to_string(deploy_details)
-            .map_err(|e| AppError::LapinError(e.to_string()))?;
-
         self.channel
             .basic_publish(
                 ShortString::from(""),
-                ShortString::from("pull_queue"),
+                ShortString::from("deploy_queue"),
                 Default::default(),
-                message.as_bytes(),
+                serde_json::to_string(deploy_details).unwrap().as_bytes(),
                 Default::default(),
             )
             .await
@@ -70,8 +63,8 @@ impl PullQueue {
         let mut consumer = self
             .channel
             .basic_consume(
-                ShortString::from("pull_queue"),
-                ShortString::from("pull_queue"),
+                ShortString::from("deploy_queue"),
+                ShortString::from("deploy_queue"),
                 Default::default(),
                 Default::default(),
             )

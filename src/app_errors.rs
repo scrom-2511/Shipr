@@ -21,6 +21,9 @@ pub enum AppError {
     #[error("Json Web Token error: {0}")]
     JsonWebToken(#[from] jsonwebtoken::errors::Error),
 
+    #[error("Redis error: {0}")]
+    Redis(#[from] redis::RedisError),
+
     #[error("Lapin error: {0}")]
     LapinError(String),
 
