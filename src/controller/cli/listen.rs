@@ -319,7 +319,7 @@ pub async fn listen(
             .app_data(redeploy_queue.clone())
             .app_data(id_allocator.clone())
             .app_data(vm_pool.clone())
-            .route("/kill_vm", web::post().to(kill_vm_handler))
+            .route("/kill-vm", web::post().to(kill_vm_handler))
             .route("/webhook/github", web::post().to(github_webhook))
             .route("/deploy", web::post().to(deploy_handler))
     })
