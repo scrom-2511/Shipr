@@ -49,6 +49,7 @@ impl VmPool {
         project_id: &str,
         job_type: &JobType,
     ) -> Result<(), AppError> {
+        println!("Removing from pool: {}", project_id);
         let project_id = &format!("{}_{}", project_id, job_type);
 
         let mut conn = self.redis.get_conn().await?;

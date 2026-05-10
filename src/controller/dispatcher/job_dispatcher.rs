@@ -1,6 +1,7 @@
 use core::fmt;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use url::Url;
 
 use crate::app_errors::AppError;
@@ -8,8 +9,10 @@ use crate::app_types::{DeployDetails, JobType, RedeployDetails, RunDetails};
 use crate::config::app_config::get_dir;
 use crate::controller::storage::s3::S3Service;
 use crate::controller::vm::firecracker::Firecracker;
+use crate::controller::vm::heartbeat_store::HeartbeatStore;
 use crate::controller::vm::id_allocator::IdAllocator;
 use crate::controller::vm::vm_pool::VmPool;
+use crate::infra::kill_vm::kill_vm;
 use crate::infra::process::run_script;
 
 impl fmt::Display for JobType {
@@ -76,15 +79,22 @@ pub struct JobDispatcher {
     vm_pool: VmPool,
     pub s3_service: S3Service,
     id_allocator: IdAllocator,
+    heartbeat_store: HeartbeatStore,
 }
 
 impl JobDispatcher {
-    pub fn new(vm_pool: VmPool, s3_service: S3Service, id_allocator: IdAllocator) -> Self {
+    pub fn new(
+        vm_pool: VmPool,
+        s3_service: S3Service,
+        id_allocator: IdAllocator,
+        heartbeat_store: HeartbeatStore,
+    ) -> Self {
         Self {
             vm: None,
             vm_pool,
             s3_service,
             id_allocator,
+            heartbeat_store,
         }
     }
 
@@ -263,6 +273,8 @@ impl JobDispatcher {
 
             let id_allocator = self.id_allocator.clone();
             let vm_pool = self.vm_pool.clone();
+            let heartbeat_store = self.heartbeat_store.clone();
+            let project_id = project_id.to_string();
 
             tokio::task::spawn(async move {
                 let new_id = id_allocator.allocate_id().await?;
@@ -270,6 +282,17 @@ impl JobDispatcher {
 
                 new_vm.create_vm().await?;
                 vm_pool.add_to_ideal_vms(new_id).await?;
+
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+
+                    let dead = heartbeat_store.is_dead(&project_id).await?;
+
+                    if dead {
+                        kill_vm(&project_id, &JobType::Run, &vm_pool, &id_allocator);
+                        break;
+                    }
+                }
 
                 Ok::<(), AppError>(())
             });

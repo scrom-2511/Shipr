@@ -37,7 +37,7 @@ impl Host {
 
                 let last = *last_heartbeat.lock().await;
 
-                if last.elapsed() > Duration::from_secs(3600) {
+                if last.elapsed() > Duration::from_secs(60) {
                     let _ = client
                         .post("https://francisco-unscholarlike-punctually.ngrok-free.dev/kill-vm")
                         .json(&json!({

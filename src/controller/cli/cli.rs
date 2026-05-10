@@ -21,7 +21,10 @@ use crate::{
         dispatcher::job_dispatcher::JobDispatcher,
         queue::{deploy_queue::DeployQueue, lapin::Lapin, redeploy_queue::ReDeployQueue},
         storage::s3::S3Service,
-        vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+        vm::{
+            firecracker::Firecracker, heartbeat_store::HeartbeatStore, id_allocator::IdAllocator,
+            vm_pool::VmPool,
+        },
     },
     infra::process::run_script,
 };
@@ -64,17 +67,18 @@ pub async fn cli(
     vm_pool: VmPool,
     id_allocator: IdAllocator,
     s3_service: S3Service,
+    heartbeat_store: HeartbeatStore,
 ) -> Result<(), AppError> {
     let args = Cli::parse();
 
     match args.command {
         Commands::Listen => {
             println!("Starting listener...");
-            listen(id_allocator, vm_pool, s3_service).await?;
+            listen(id_allocator, vm_pool, s3_service, heartbeat_store).await?;
         }
 
         Commands::Serve => {
-            serve(id_allocator, vm_pool, s3_service).await?;
+            serve(id_allocator, vm_pool, s3_service, heartbeat_store).await?;
         }
 
         Commands::Deploy {

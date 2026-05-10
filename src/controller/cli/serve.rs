@@ -8,7 +8,10 @@ use crate::{
         api::vm_request_proxy::VmRequestProxy,
         dispatcher::job_dispatcher::JobDispatcher,
         storage::s3::S3Service,
-        vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+        vm::{
+            firecracker::Firecracker, heartbeat_store::HeartbeatStore, id_allocator::IdAllocator,
+            vm_pool::VmPool,
+        },
     },
 };
 
@@ -24,14 +27,20 @@ pub async fn serve(
     id_allocator: IdAllocator,
     vm_pool: VmPool,
     s3_service: S3Service,
+    heartbeat_store: HeartbeatStore,
 ) -> Result<(), AppError> {
-    let job_dispatcher =
-        JobDispatcher::new(vm_pool.clone(), s3_service.clone(), id_allocator.clone());
+    let job_dispatcher = JobDispatcher::new(
+        vm_pool.clone(),
+        s3_service.clone(),
+        id_allocator.clone(),
+        heartbeat_store.clone(),
+    );
 
     let vm_request_proxy = web::Data::new(Mutex::new(VmRequestProxy::new(
         vm_pool.clone(),
         job_dispatcher.clone(),
         id_allocator.clone(),
+        heartbeat_store.clone(),
     )?));
 
     for _ in 0..1 {

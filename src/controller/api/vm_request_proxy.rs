@@ -2,6 +2,7 @@ use crate::app_errors::AppError;
 use crate::app_types::JobType;
 use crate::controller::dispatcher::job_dispatcher::JobDispatcher;
 use crate::controller::vm::firecracker::Firecracker;
+use crate::controller::vm::heartbeat_store::HeartbeatStore;
 use crate::controller::vm::id_allocator::IdAllocator;
 use crate::controller::vm::vm_pool::VmPool;
 use actix_web::http::Uri;
@@ -19,6 +20,7 @@ pub struct VmRequestProxy {
     client: Client,
     job_dispatcher: JobDispatcher,
     id_allocator: IdAllocator,
+    heartbeat_store: HeartbeatStore,
 }
 
 impl VmRequestProxy {
@@ -26,6 +28,7 @@ impl VmRequestProxy {
         vm_pool: VmPool,
         job_dispatcher: JobDispatcher,
         id_allocator: IdAllocator,
+        heartbeat_store: HeartbeatStore,
     ) -> Result<Self, AppError> {
         let client = Client::new();
 
@@ -34,6 +37,7 @@ impl VmRequestProxy {
             client,
             job_dispatcher,
             id_allocator,
+            heartbeat_store,
         })
     }
 
@@ -112,6 +116,10 @@ impl VmRequestProxy {
         let (project_id, target_path) = self.extract_project_and_path(&req)?;
 
         self.job_dispatcher.dispatch_run_job(&project_id).await?;
+
+        self.heartbeat_store
+            .heartbeat(&project_id, Duration::from_secs(60))
+            .await?;
 
         println!("Job dispatched");
 

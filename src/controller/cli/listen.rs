@@ -14,8 +14,12 @@ use crate::{
         dispatcher::job_dispatcher::JobDispatcher,
         queue::{deploy_queue::DeployQueue, lapin::Lapin, redeploy_queue::ReDeployQueue},
         storage::s3::S3Service,
-        vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+        vm::{
+            firecracker::Firecracker, heartbeat_store::HeartbeatStore, id_allocator::IdAllocator,
+            vm_pool::VmPool,
+        },
     },
+    infra::kill_vm::kill_vm,
 };
 
 type InstallationStore = web::Data<Mutex<HashMap<String, InstallationEvent>>>;
@@ -44,19 +48,13 @@ async fn kill_vm_handler(
 
     println!("Kill VM request: {:?}", kill_vm_req);
 
-    let project_id = kill_vm_req.project_id;
-    let job_type = kill_vm_req.job_type;
-
-    let vm_id = vm_pool
-        .get_from_pool(&project_id, &job_type)
-        .await?
-        .unwrap();
-
-    let new_vm = Firecracker::new(vm_id);
-
-    new_vm.destroy_vm().await?;
-    vm_pool.remove_from_pool(&project_id, &job_type).await?;
-    id_allocator.release_id(vm_id).await?;
+    kill_vm(
+        &kill_vm_req.project_id,
+        &kill_vm_req.job_type,
+        &vm_pool,
+        &id_allocator,
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -129,12 +127,17 @@ pub async fn listen(
     id_allocator: IdAllocator,
     vm_pool: VmPool,
     s3_service: S3Service,
+    heartbeat_store: HeartbeatStore,
 ) -> Result<(), AppError> {
     let installation_ids: InstallationStore =
         web::Data::new(Mutex::new(HashMap::<String, InstallationEvent>::new()));
 
-    let job_dispatcher =
-        JobDispatcher::new(vm_pool.clone(), s3_service.clone(), id_allocator.clone());
+    let job_dispatcher = JobDispatcher::new(
+        vm_pool.clone(),
+        s3_service.clone(),
+        id_allocator.clone(),
+        heartbeat_store.clone(),
+    );
 
     for _ in 0..1 {
         let new_id = id_allocator.allocate_id().await?;

@@ -41,6 +41,7 @@ impl IdAllocator {
     }
 
     pub async fn release_id(&self, id: u8) -> Result<(), AppError> {
+        println!("Releasing ID: {}", id);
         self.remove_from_current_ids(id).await?;
 
         Ok(())
