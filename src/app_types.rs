@@ -43,7 +43,7 @@ pub struct RunDetails {
     pub project_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum JobType {
     Deploy,
     Run,
@@ -93,8 +93,11 @@ pub struct Repository {
 pub struct RedeployEvent {
     #[serde(rename = "ref")]
     pub ref_field: String,
+
     pub after: String,
-    pub repositories: Vec<Repository>,
+
+    pub repository: Repository,
+
     pub installation: Installation,
 }
 

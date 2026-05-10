@@ -171,6 +171,14 @@ impl JobExecuter {
 
         let host = Host::new();
 
+        match job_type {
+            JobType::Redeploy => {
+                host.redeployment_completed(deploy_details.project_id.to_owned(), job_type.clone())
+                    .await?;
+            }
+            _ => {}
+        }
+
         host.kill_vm(deploy_details.project_id.to_owned(), job_type)
             .await?;
 
@@ -246,6 +254,8 @@ impl JobExecuter {
         redeploy_details: &RedeployDetails,
         job_type: JobType,
     ) -> Result<(), AppError> {
+        println!("redeploy details is:");
+
         let project_id = redeploy_details.project_id.to_owned();
 
         // For dev
@@ -254,30 +264,49 @@ impl JobExecuter {
             "https://francisco-unscholarlike-punctually.ngrok-free.dev/s3/",
         );
 
+        println!("presigned download url is: {}", presigned_download_url);
+
         let download_cmd = format!("curl -o {}.zip '{}'", &project_id, presigned_download_url);
+
+        println!("download command is: {}", download_cmd);
 
         run_script(vec![&download_cmd], get_worker_dir())?;
 
+        println!("download command completed");
+
         let unzip_cmd = format!("unzip {}.zip -d /root/{}", project_id, project_id);
 
+        println!("unzip command is: {}", unzip_cmd);
+
         run_script(vec![&unzip_cmd], get_worker_dir())?;
+
+        println!("unzip command completed");
 
         let copy_job_json = format!("cp /root/{}/job.json /root/", project_id);
 
         run_script(vec![&copy_job_json], get_worker_dir())?;
 
-        let job_json_str = fs::read_to_string("/root/job.json")?;
+        println!("copy job json completed");
+
+        let job_json_str = fs::read_to_string(format!("/root/{}/root/job.json", project_id))?;
 
         let mut job_json = serde_json::from_str::<DeployDetails>(&job_json_str)?;
 
+        println!("job json is: ");
+
         // For dev
-        let presigned_upload_url = redeploy_details.presigned_upload_url.to_owned().replace(
-            "https://francisco-unscholarlike-punctually.ngrok-free.dev/",
-            "https://francisco-unscholarlike-punctually.ngrok-free.dev/s3/",
-        );
+        let presigned_upload_url = redeploy_details.presigned_upload_url.to_owned();
+
+        println!("presigned upload url is: {}", presigned_upload_url);
 
         job_json.presigned_upload_url = presigned_upload_url;
         job_json.access_token = redeploy_details.access_token.to_owned();
+
+        println!("reached here");
+
+        let rm_previous_project = format!("rm -rf /root/{}*", project_id);
+
+        run_script(vec![&rm_previous_project], get_worker_dir())?;
 
         self.execute(&job_json, job_type).await?;
 

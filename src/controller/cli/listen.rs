@@ -2,11 +2,12 @@ use std::{collections::HashMap, time::Duration};
 
 use actix_web::{App, HttpResponse, HttpServer, web};
 use futures::lock::Mutex;
+use serde_json::Value;
 
 use crate::{
     app_errors::AppError,
     app_types::{
-        DeployDetails, DeployReq, EventType, InstallationEvent, KillVmReq, RedeployDetails,
+        DeployDetails, DeployReq, EventType, InstallationEvent, JobType, KillVmReq, RedeployDetails,
     },
     controller::{
         api::github::Github,
@@ -18,6 +19,21 @@ use crate::{
 };
 
 type InstallationStore = web::Data<Mutex<HashMap<String, InstallationEvent>>>;
+
+async fn redeploy_completed_handler(
+    body: web::Bytes,
+    vm_pool: web::Data<VmPool>,
+) -> Result<HttpResponse, AppError> {
+    let redeploy_details = serde_json::from_slice::<Value>(&body).unwrap();
+
+    let project_id = redeploy_details["project_id"].as_str().unwrap();
+
+    vm_pool
+        .remove_from_pool(project_id, &JobType::Redeploy)
+        .await?;
+
+    Ok(HttpResponse::Ok().finish())
+}
 
 async fn kill_vm_handler(
     body: web::Bytes,
@@ -251,13 +267,10 @@ pub async fn listen(
                     }
                 };
 
-                let project_id = redeploy_event.repositories[0].full_name.replace("/", "-");
+                let project_id = redeploy_event.repository.full_name.replace("/", "-");
 
                 let (owner, repo) = {
-                    let parts: Vec<&str> = redeploy_event.repositories[0]
-                        .full_name
-                        .split('/')
-                        .collect();
+                    let parts: Vec<&str> = redeploy_event.repository.full_name.split('/').collect();
                     (parts[0].to_string(), parts[1].to_string())
                 };
 
@@ -322,6 +335,10 @@ pub async fn listen(
             .route("/kill-vm", web::post().to(kill_vm_handler))
             .route("/webhook/github", web::post().to(github_webhook))
             .route("/deploy", web::post().to(deploy_handler))
+            .route(
+                "/redeploy-completed",
+                web::post().to(redeploy_completed_handler),
+            )
     })
     .bind(("127.0.0.1", 3000))?
     .run()

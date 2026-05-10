@@ -1,5 +1,4 @@
 use std::{
-    ops::Deref,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -57,6 +56,22 @@ impl Host {
     pub async fn kill_vm(&self, project_id: String, job_type: JobType) -> Result<(), AppError> {
         self.client
             .post("https://francisco-unscholarlike-punctually.ngrok-free.dev/kill-vm")
+            .json(&json!({
+                "project_id": project_id,
+                "job_type": job_type,
+            }))
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn redeployment_completed(
+        &self,
+        project_id: String,
+        job_type: JobType,
+    ) -> Result<(), AppError> {
+        self.client
+            .post("https://francisco-unscholarlike-punctually.ngrok-free.dev/redeploy-completed")
             .json(&json!({
                 "project_id": project_id,
                 "job_type": job_type,
