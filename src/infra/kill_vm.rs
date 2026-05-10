@@ -12,6 +12,8 @@ pub async fn kill_vm(
 ) -> Result<(), AppError> {
     let vm_id = vm_pool.get_from_pool(&project_id, job_type).await?.unwrap();
 
+    println!("Killing VM: {}", vm_id);
+
     let new_vm = Firecracker::new(vm_id);
 
     new_vm.destroy_vm().await?;

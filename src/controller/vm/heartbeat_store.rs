@@ -24,7 +24,7 @@ impl HeartbeatStore {
 
         let mut conn = self.redis.get_conn().await?;
 
-        conn.set_ex::<_, _, ()>(key, "alive", ttl.as_secs()).await?;
+        let _: () = conn.set_ex(key, "alive", ttl.as_secs()).await?;
 
         Ok(())
     }
@@ -44,7 +44,7 @@ impl HeartbeatStore {
 
         let mut conn = self.redis.get_conn().await?;
 
-        conn.del::<_, ()>(key).await?;
+        let _: () = conn.del(key).await?;
 
         Ok(())
     }

@@ -118,7 +118,7 @@ impl VmRequestProxy {
         self.job_dispatcher.dispatch_run_job(&project_id).await?;
 
         self.heartbeat_store
-            .heartbeat(&project_id, Duration::from_secs(60))
+            .heartbeat(&project_id, Duration::from_secs(30))
             .await?;
 
         println!("Job dispatched");

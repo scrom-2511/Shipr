@@ -283,13 +283,19 @@ impl JobDispatcher {
                 new_vm.create_vm().await?;
                 vm_pool.add_to_ideal_vms(new_id).await?;
 
+                let mut count = 0;
+
                 loop {
-                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+
+                    count += 1;
+
+                    println!("count is: {}", count);
 
                     let dead = heartbeat_store.is_dead(&project_id).await?;
 
                     if dead {
-                        kill_vm(&project_id, &JobType::Run, &vm_pool, &id_allocator);
+                        kill_vm(&project_id, &JobType::Run, &vm_pool, &id_allocator).await?;
                         break;
                     }
                 }
