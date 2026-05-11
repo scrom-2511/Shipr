@@ -39,7 +39,6 @@ pub async fn serve(
     let vm_request_proxy = web::Data::new(Mutex::new(VmRequestProxy::new(
         vm_pool.clone(),
         job_dispatcher.clone(),
-        id_allocator.clone(),
         heartbeat_store.clone(),
     )?));
 

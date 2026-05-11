@@ -19,7 +19,6 @@ pub struct VmRequestProxy {
     vm_pool: VmPool,
     client: Client,
     job_dispatcher: JobDispatcher,
-    id_allocator: IdAllocator,
     heartbeat_store: HeartbeatStore,
 }
 
@@ -27,7 +26,6 @@ impl VmRequestProxy {
     pub fn new(
         vm_pool: VmPool,
         job_dispatcher: JobDispatcher,
-        id_allocator: IdAllocator,
         heartbeat_store: HeartbeatStore,
     ) -> Result<Self, AppError> {
         let client = Client::new();
@@ -36,7 +34,6 @@ impl VmRequestProxy {
             vm_pool,
             client,
             job_dispatcher,
-            id_allocator,
             heartbeat_store,
         })
     }
