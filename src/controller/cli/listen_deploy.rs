@@ -4,10 +4,9 @@ use actix_web::web;
 
 use crate::{
     app_errors::AppError,
-    app_types::DeployDetails,
+    app_types::{DeployDetails, InstallationStore},
     controller::{
         api::github::Github,
-        cli::listen::InstallationStore,
         dispatcher::job_dispatcher::JobDispatcher,
         queue::deploy_queue::DeployQueue,
         storage::s3::S3Service,

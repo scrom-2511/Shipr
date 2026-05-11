@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     app_errors::AppError,
-    app_types::{DeployReq, EventType, InstallationEvent, JobType, KillVmReq},
+    app_types::{DeployReq, EventType, InstallationEvent, InstallationStore, JobType, KillVmReq},
     controller::{
         cli::{listen_deploy::listen_deploy, listen_redeploy::listen_redeploy},
         dispatcher::job_dispatcher::JobDispatcher,
@@ -19,8 +19,6 @@ use crate::{
     },
     infra::kill_vm::kill_vm,
 };
-
-pub type InstallationStore = web::Data<Mutex<HashMap<String, InstallationEvent>>>;
 
 async fn redeploy_completed_handler(
     body: web::Bytes,

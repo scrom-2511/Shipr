@@ -1,6 +1,11 @@
 use core::fmt;
+use std::collections::HashMap;
 
+use actix_web::web;
+use futures::lock::Mutex;
 use serde::{Deserialize, Serialize};
+
+pub type InstallationStore = web::Data<Mutex<HashMap<String, InstallationEvent>>>;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DeployReq {
