@@ -47,15 +47,15 @@ impl JobExecuter {
             deploy_details.repo.to_owned(),
         );
 
-        let tarball_url = github_app.get_tarball_url().await?;
+        let tarball_url = github_app.get_tarball_url(&deploy_details.branch).await?;
         println!("tarball url is: {}", tarball_url);
 
-        let git_clone_cmd = format!(
+        let git_pull_cmd = format!(
             "curl -Lo {}.tar.gz {} -H 'Accept: application/vnd.github.v3+json' -H 'Authorization: token {}'",
             deploy_details.project_id, tarball_url, deploy_details.access_token
         );
 
-        println!("git clone command is: {}", git_clone_cmd);
+        println!("git clone command is: {}", git_pull_cmd);
 
         let extract_cmd = format!("tar -xzf {}.tar.gz", deploy_details.project_id);
 
@@ -69,7 +69,7 @@ impl JobExecuter {
         println!("rename command is: {}", rename_cmd);
 
         run_script(
-            vec![&git_clone_cmd, &extract_cmd, &rename_cmd],
+            vec![&git_pull_cmd, &extract_cmd, &rename_cmd],
             get_worker_dir(),
         )?;
 

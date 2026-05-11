@@ -45,8 +45,12 @@ impl GithubApp {
         Ok(branch.to_string())
     }
 
-    pub async fn get_commit_sha(&mut self) -> Result<String, AppError> {
-        let branch = self.get_default_branch().await?;
+    pub async fn get_commit_sha(&mut self, branch: &str) -> Result<String, AppError> {
+        let branch = if branch.is_empty() {
+            self.get_default_branch().await?
+        } else {
+            branch.to_string()
+        };
 
         let url = format!(
             "https://api.github.com/repos/{}/{}/commits/{}",
@@ -61,8 +65,8 @@ impl GithubApp {
         Ok(sha.to_string())
     }
 
-    pub async fn get_tarball_url(&mut self) -> Result<String, AppError> {
-        let sha = self.get_commit_sha().await?;
+    pub async fn get_tarball_url(&mut self, branch: &str) -> Result<String, AppError> {
+        let sha = self.get_commit_sha(branch).await?;
 
         let url = format!(
             "https://api.github.com/repos/{}/{}/tarball/{}",
