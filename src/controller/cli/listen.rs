@@ -1,24 +1,24 @@
-use std::{collections::HashMap, fs};
+use std::collections::HashMap;
 
 use actix_web::{
-    App, HttpResponse, HttpServer,
+    App, HttpServer,
     web::{self},
 };
-use serde_json::Value;
-use tokio::sync::{
-    Mutex,
-    broadcast::{Sender, channel},
-};
+use tokio::sync::{Mutex, broadcast::Sender};
 
 use crate::{
     app_errors::AppError,
-    app_types::{
-        DeployReq, EventType, InstallationEvent, InstallationStore, JobType, KillVmReq, LogsStore,
-    },
+    app_types::{InstallationEvent, InstallationStore, LogsStore},
     controller::{
-        api::logs::{logs_handler, stream_logs_handler},
         cli::{listen_deploy::listen_deploy, listen_redeploy::listen_redeploy},
         dispatcher::job_dispatcher::JobDispatcher,
+        handlers::{
+            deploy::deploy_handler,
+            github::github_webhook,
+            kill_vm::kill_vm_handler,
+            logs::{logs_handler, stream_logs_handler},
+            redeployment_completed::redeploy_completed_handler,
+        },
         queue::{deploy_queue::DeployQueue, lapin::Lapin, redeploy_queue::ReDeployQueue},
         storage::s3::S3Service,
         vm::{
@@ -26,151 +26,7 @@ use crate::{
             vm_pool::VmPool,
         },
     },
-    infra::kill_vm::kill_vm,
 };
-
-async fn redeploy_completed_handler(
-    body: web::Bytes,
-    vm_pool: web::Data<VmPool>,
-) -> Result<HttpResponse, AppError> {
-    let redeploy_details = serde_json::from_slice::<Value>(&body).unwrap();
-
-    let project_id = redeploy_details["project_id"].as_str().unwrap();
-
-    vm_pool
-        .remove_from_pool(project_id, &JobType::Redeploy)
-        .await?;
-
-    Ok(HttpResponse::Ok().finish())
-}
-
-async fn kill_vm_handler(
-    body: web::Bytes,
-    vm_pool: web::Data<VmPool>,
-    id_allocator: web::Data<IdAllocator>,
-    logs_store: LogsStore,
-) -> Result<HttpResponse, AppError> {
-    let kill_vm_req = serde_json::from_slice::<KillVmReq>(&body).unwrap();
-
-    println!("Kill VM request: {:?}", kill_vm_req);
-
-    kill_vm(
-        &kill_vm_req.project_id,
-        &kill_vm_req.job_type,
-        &vm_pool,
-        &id_allocator,
-    )
-    .await?;
-
-    logs_store.lock().await.remove(&kill_vm_req.project_id);
-
-    Ok(HttpResponse::Ok().finish())
-}
-
-async fn github_webhook(
-    body: web::Bytes,
-    installation_ids: InstallationStore,
-    redeploy_queue: web::Data<ReDeployQueue>,
-) -> HttpResponse {
-    println!("Github webhook received");
-    println!(
-        "Github webhook received: {}",
-        String::from_utf8_lossy(&body)
-    );
-
-    let event = serde_json::from_slice::<EventType>(&body).unwrap();
-
-    match event {
-        EventType::Install(installation_event) => {
-            if installation_event.action == "created" {
-                let url = format!(
-                    "https://github.com/{}",
-                    installation_event.repositories[0].full_name
-                );
-
-                println!("the key url is: {}", url);
-
-                installation_ids
-                    .lock()
-                    .await
-                    .insert(url.clone(), installation_event);
-
-                println!("Installation event stored");
-
-                println!(
-                    "installation_ids from fn: {:?}",
-                    installation_ids.lock().await
-                );
-            }
-        }
-        EventType::Push(redeploy_event) => {
-            redeploy_queue.publish(redeploy_event).await.unwrap();
-
-            println!("Installation event stored");
-
-            println!(
-                "installation_ids from fn: {:?}",
-                installation_ids.lock().await
-            );
-        }
-    }
-
-    HttpResponse::Ok().finish()
-}
-
-async fn deploy_handler(
-    body: web::Bytes,
-    deploy_queue: web::Data<DeployQueue>,
-    logs_store: LogsStore,
-) -> Result<HttpResponse, AppError> {
-    println!("i was called");
-    let deploy_details = serde_json::from_slice::<DeployReq>(&body).unwrap();
-
-    println!("Deploy details: {:?}", deploy_details);
-
-    let mut url = deploy_details.url.trim().to_string();
-
-    url = url.replace("https://github.com/", "");
-    url = url.replace(".git", "");
-
-    if url.ends_with('/') {
-        url.pop();
-    }
-
-    url = url.replace("/", "-");
-
-    println!("{}", url);
-
-    let project_id = url;
-
-    let (tx, _) = channel::<String>(100);
-
-    let file_path = "/home/scrom/code/shipr/logs";
-
-    fs::create_dir_all(file_path).unwrap();
-
-    fs::File::create(format!("{}/{}.txt", file_path, project_id)).unwrap();
-
-    // let log = "Waiting for queue...";
-
-    // let mut file = fs::OpenOptions::new()
-    //     .create(true)
-    //     .append(true)
-    //     .open(format!("{}/{}.txt", file_path, project_id))
-    //     .unwrap();
-
-    // writeln!(file, "{}", log).unwrap();
-
-    logs_store.lock().await.insert(project_id.clone(), tx);
-
-    println!("{:?}", logs_store.lock().await.keys());
-
-    deploy_queue.publish(&deploy_details).await?;
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "project_id": project_id
-    })))
-}
 
 pub async fn listen(
     id_allocator: IdAllocator,
