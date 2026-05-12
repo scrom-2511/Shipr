@@ -16,6 +16,7 @@ use crate::{
         DeployReq, EventType, InstallationEvent, InstallationStore, JobType, KillVmReq, LogsStore,
     },
     controller::{
+        api::logs::{logs_handler, stream_logs_handler},
         cli::{listen_deploy::listen_deploy, listen_redeploy::listen_redeploy},
         dispatcher::job_dispatcher::JobDispatcher,
         queue::{deploy_queue::DeployQueue, lapin::Lapin, redeploy_queue::ReDeployQueue},
@@ -25,10 +26,7 @@ use crate::{
             vm_pool::VmPool,
         },
     },
-    infra::{
-        kill_vm::kill_vm,
-        logs::{logs_handler, stream_logs_handler},
-    },
+    infra::kill_vm::kill_vm,
 };
 
 async fn redeploy_completed_handler(
