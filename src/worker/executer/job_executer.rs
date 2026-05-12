@@ -13,11 +13,13 @@ use crate::{
     worker::api::{githubapp::GithubApp, host::Host},
 };
 
-pub struct JobExecuter;
+pub struct JobExecuter {
+    host: Host,
+}
 
 impl JobExecuter {
     pub fn new() -> Self {
-        Self {}
+        Self { host: Host::new() }
     }
 
     fn extract_repo_name(&self, url: &str) -> Result<String, AppError> {
@@ -47,6 +49,10 @@ impl JobExecuter {
             deploy_details.repo.to_owned(),
         );
 
+        self.host
+            .send_logs(&deploy_details.project_id, "Pulling repository...")
+            .await?;
+
         let tarball_url = github_app.get_tarball_url(&deploy_details.branch).await?;
         println!("tarball url is: {}", tarball_url);
 
@@ -58,6 +64,10 @@ impl JobExecuter {
         println!("git clone command is: {}", git_pull_cmd);
 
         let extract_cmd = format!("tar -xzf {}.tar.gz", deploy_details.project_id);
+
+        self.host
+            .send_logs(&deploy_details.project_id, "Extracting repository...")
+            .await?;
 
         println!("extract command is: {}", extract_cmd);
 
@@ -81,7 +91,17 @@ impl JobExecuter {
 
         println!("project path is: {}", project_path);
 
+        self.host
+            .send_logs(&deploy_details.project_id, "Installing dependencies...")
+            .await?;
+
         if !deploy_details.install_commands.is_empty() {
+            self.host
+                .send_logs(
+                    &deploy_details.project_id,
+                    "Found custom install commands, using them...",
+                )
+                .await?;
             let install_cmd = deploy_details.install_commands.join(" && ");
 
             let final_cmd = format!("cd {} && {}", project_path, install_cmd);
@@ -91,7 +111,21 @@ impl JobExecuter {
             return Ok(());
         }
 
+        self.host
+            .send_logs(
+                &deploy_details.project_id,
+                "No custom install commands found, using default install commands...",
+            )
+            .await?;
+
         let project_type = detect_project_type(&project_path);
+
+        self.host
+            .send_logs(
+                &deploy_details.project_id,
+                &format!("Detected project type: {}", project_type),
+            )
+            .await?;
 
         let config = get_default_config(project_type);
 
@@ -105,13 +139,30 @@ impl JobExecuter {
 
         run_script(vec![&final_cmd], get_worker_dir())?;
 
+        self.host
+            .send_logs(
+                &deploy_details.project_id,
+                "Dependencies installed successfully",
+            )
+            .await?;
+
         Ok(())
     }
 
     async fn build(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
         let project_path = self.get_project_path(deploy_details)?;
 
+        self.host
+            .send_logs(&deploy_details.project_id, "Building project...")
+            .await?;
+
         if !deploy_details.build_commands.is_empty() {
+            self.host
+                .send_logs(
+                    &deploy_details.project_id,
+                    "Found custom build commands, using them...",
+                )
+                .await?;
             let build_cmd = deploy_details.build_commands.join(" && ");
 
             let final_cmd = format!("cd {} && {}", project_path, build_cmd);
@@ -119,6 +170,13 @@ impl JobExecuter {
             run_script(vec![&final_cmd], get_worker_dir())?;
             return Ok(());
         }
+
+        self.host
+            .send_logs(
+                &deploy_details.project_id,
+                "No custom build commands found, using default build commands...",
+            )
+            .await?;
 
         let project_type = detect_project_type(&project_path);
         let config = get_default_config(project_type);
@@ -154,6 +212,10 @@ impl JobExecuter {
         );
 
         run_script(vec![&upload_cmd], get_worker_dir())?;
+
+        self.host
+            .send_logs(&deploy_details.project_id, "Build completed successfully")
+            .await?;
 
         Ok(())
     }
@@ -201,12 +263,6 @@ impl JobExecuter {
         if port_exists {
             return Ok(());
         }
-
-        let host = Host::new();
-
-        host.start_watchdog(run_details.project_id.to_owned(), JobType::Run);
-
-        host.heartbeat().await;
 
         let project_id = &run_details.project_id;
 

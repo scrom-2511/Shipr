@@ -24,6 +24,9 @@ pub enum AppError {
     #[error("Redis error: {0}")]
     Redis(#[from] redis::RedisError),
 
+    #[error("Tokio mpsc error: {0}")]
+    TokioMpscError(#[from] tokio::sync::broadcast::error::SendError<std::string::String>),
+
     #[error("Lapin error: {0}")]
     LapinError(String),
 

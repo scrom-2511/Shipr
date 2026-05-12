@@ -1,5 +1,5 @@
 use crate::app_errors::AppError;
-use std::process::Command;
+use std::{io::Read, process::Command};
 
 pub fn run_script(script: Vec<&str>, dir: &str) -> Result<(), AppError> {
     for cmd in script {

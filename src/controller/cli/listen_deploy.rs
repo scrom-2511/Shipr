@@ -40,9 +40,6 @@ pub async fn listen_deploy(
                 break ev;
             }
 
-            println!("waiting...");
-            println!("installation_ids: {:?}", installation_ids.lock().await);
-
             tokio::time::sleep(Duration::from_secs(1)).await;
         };
 
