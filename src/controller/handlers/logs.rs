@@ -25,8 +25,6 @@ pub async fn stream_logs_handler(
         }
     };
 
-    println!("sender is {:?}", sender);
-
     let mut rx = sender.subscribe();
 
     let stream = async_stream::stream! {
@@ -38,7 +36,7 @@ pub async fn stream_logs_handler(
         for line in old_logs.lines() {
             yield Ok::<Bytes, actix_web::Error>(
                 Bytes::from(
-                    format!("data: {}\\n\\n", line)
+                    line.to_owned()
                 )
             );
         }
@@ -48,7 +46,7 @@ pub async fn stream_logs_handler(
                 Ok(msg) => {
                     yield Ok::<Bytes, actix_web::Error>(
                         Bytes::from(
-                            format!("data: {}\n\n", msg)
+                            msg
                         )
                     );
                 }
@@ -86,7 +84,7 @@ pub async fn logs_handler(
 
     writeln!(file, "{}", log).unwrap();
 
-    let tx = { logs_store.lock().await.get(project_id).cloned() };
+    let tx = logs_store.lock().await.get(project_id).cloned();
 
     if let Some(tx) = tx {
         tx.send(log.to_string())?;
