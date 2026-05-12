@@ -1,8 +1,8 @@
 use std::fs;
 
 use shipr::{
-    app_types::{DeployDetails, JobType, RedeployDetails, RunDetails},
-    worker::executer::job_executer::JobExecuter,
+    core::app_types::{DeployDetails, JobType, RedeployDetails, RunDetails},
+    core::worker::executer::job_executer::JobExecuter,
 };
 
 #[tokio::main]

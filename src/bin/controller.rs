@@ -1,4 +1,4 @@
-use shipr::controller::{
+use shipr::core::controller::{
     cli::cli::cli,
     storage::{redis::Redis, s3::S3Service},
     vm::{heartbeat_store::HeartbeatStore, id_allocator::IdAllocator, vm_pool::VmPool},

@@ -1,0 +1,56 @@
+use reqwest::Client;
+use serde_json::json;
+
+use crate::{app_errors::AppError, core::app_types::JobType};
+
+pub struct Host {
+    client: Client,
+}
+
+impl Host {
+    pub fn new() -> Self {
+        Self {
+            client: Client::new(),
+        }
+    }
+
+    pub async fn kill_vm(&self, project_id: String, job_type: JobType) -> Result<(), AppError> {
+        self.client
+            .post("https://francisco-unscholarlike-punctually.ngrok-free.dev/kill-vm")
+            .json(&json!({
+                "project_id": project_id,
+                "job_type": job_type,
+            }))
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn send_logs(&self, project_id: &str, log: &str) -> Result<(), AppError> {
+        self.client
+            .post("https://francisco-unscholarlike-punctually.ngrok-free.dev/send-logs")
+            .json(&json!({
+                "project_id": project_id,
+                "log": log,
+            }))
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    pub async fn redeployment_completed(
+        &self,
+        project_id: String,
+        job_type: JobType,
+    ) -> Result<(), AppError> {
+        self.client
+            .post("https://francisco-unscholarlike-punctually.ngrok-free.dev/redeploy-completed")
+            .json(&json!({
+                "project_id": project_id,
+                "job_type": job_type,
+            }))
+            .send()
+            .await?;
+        Ok(())
+    }
+}
