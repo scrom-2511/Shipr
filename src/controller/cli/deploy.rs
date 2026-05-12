@@ -1,9 +1,16 @@
+use futures_util::StreamExt;
 use reqwest::Client;
+use serde::Deserialize;
 
 use crate::{
     app_errors::AppError, app_types::DeployReq, config::app_config::get_dir,
     infra::process::run_script,
 };
+
+#[derive(Deserialize)]
+struct DeployResponse {
+    project_id: String,
+}
 
 pub async fn deploy(deploy_req: DeployReq) -> Result<(), AppError> {
     let github_app_url = "https://github.com/apps/shipr-deployment/installations/new";
@@ -25,5 +32,31 @@ pub async fn deploy(deploy_req: DeployReq) -> Result<(), AppError> {
         .await?;
 
     println!("Deploy response: {}", res.status());
+
+    let deploy_response = res.json::<DeployResponse>().await?;
+
+    println!("Project ID: {}", deploy_response.project_id);
+
+    println!("Waiting for queue...");
+
+    let logs_url = format!(
+        "https://francisco-unscholarlike-punctually.ngrok-free.dev/logs/{}",
+        deploy_response.project_id
+    );
+
+    let res = client.get(logs_url).send().await?;
+
+    let mut stream = res.bytes_stream();
+
+    while let Some(item) = stream.next().await {
+        let chunk = item?;
+
+        let text = String::from_utf8_lossy(&chunk);
+
+        let text = text.replace("data: ", "");
+
+        print!("{}", text);
+    }
+
     Ok(())
 }
