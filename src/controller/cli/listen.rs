@@ -1,12 +1,20 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fs, io::Write};
 
-use actix_web::{App, HttpResponse, HttpServer, web};
-use futures::lock::Mutex;
+use actix_web::{
+    App, HttpResponse, HttpServer,
+    web::{self, Bytes},
+};
 use serde_json::Value;
+use tokio::sync::{
+    Mutex,
+    broadcast::{Sender, channel},
+};
 
 use crate::{
     app_errors::AppError,
-    app_types::{DeployReq, EventType, InstallationEvent, InstallationStore, JobType, KillVmReq},
+    app_types::{
+        DeployReq, EventType, InstallationEvent, InstallationStore, JobType, KillVmReq, LogsStore,
+    },
     controller::{
         cli::{listen_deploy::listen_deploy, listen_redeploy::listen_redeploy},
         dispatcher::job_dispatcher::JobDispatcher,
@@ -39,6 +47,7 @@ async fn kill_vm_handler(
     body: web::Bytes,
     vm_pool: web::Data<VmPool>,
     id_allocator: web::Data<IdAllocator>,
+    logs_store: LogsStore,
 ) -> Result<HttpResponse, AppError> {
     let kill_vm_req = serde_json::from_slice::<KillVmReq>(&body).unwrap();
 
@@ -51,6 +60,8 @@ async fn kill_vm_handler(
         &id_allocator,
     )
     .await?;
+
+    logs_store.lock().await.remove(&kill_vm_req.project_id);
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -109,13 +120,138 @@ async fn github_webhook(
 async fn deploy_handler(
     body: web::Bytes,
     deploy_queue: web::Data<DeployQueue>,
+    logs_store: LogsStore,
 ) -> Result<HttpResponse, AppError> {
     println!("i was called");
     let deploy_details = serde_json::from_slice::<DeployReq>(&body).unwrap();
 
     println!("Deploy details: {:?}", deploy_details);
 
+    let mut url = deploy_details.url.trim().to_string();
+
+    url = url.replace("https://github.com/", "");
+    url = url.replace(".git", "");
+
+    if url.ends_with('/') {
+        url.pop();
+    }
+
+    url = url.replace("/", "-");
+
+    println!("{}", url);
+
+    let project_id = url;
+
+    let (tx, _) = channel::<String>(100);
+
+    let file_path = "/home/scrom/code/shipr/logs";
+
+    fs::create_dir_all(file_path).unwrap();
+
+    fs::File::create(format!("{}/{}.txt", file_path, project_id)).unwrap();
+
+    // let log = "Waiting for queue...";
+
+    // let mut file = fs::OpenOptions::new()
+    //     .create(true)
+    //     .append(true)
+    //     .open(format!("{}/{}.txt", file_path, project_id))
+    //     .unwrap();
+
+    // writeln!(file, "{}", log).unwrap();
+
+    logs_store.lock().await.insert(project_id.clone(), tx);
+
+    println!("{:?}", logs_store.lock().await.keys());
+
     deploy_queue.publish(&deploy_details).await?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "project_id": project_id
+    })))
+}
+
+async fn stream_logs_handler(
+    path: web::Path<String>,
+    logs_store: LogsStore,
+) -> Result<HttpResponse, AppError> {
+    let project_id = path.into_inner();
+
+    println!("Project ID: {}", project_id);
+
+    let sender = logs_store.lock().await.get(&project_id).cloned();
+
+    let sender = match sender {
+        Some(sender) => sender,
+        None => {
+            return Ok(HttpResponse::NotFound().finish());
+        }
+    };
+
+    println!("sender is {:?}", sender);
+
+    let mut rx = sender.subscribe();
+
+    let stream = async_stream::stream! {
+
+        let file_path = "/home/scrom/code/shipr/logs";
+
+        let old_logs = fs::read_to_string(format!("{}/{}.txt", file_path, project_id)).unwrap();
+
+        for line in old_logs.lines() {
+            yield Ok::<Bytes, actix_web::Error>(
+                Bytes::from(
+                    format!("data: {}\\n\\n", line)
+                )
+            );
+        }
+
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    yield Ok::<Bytes, actix_web::Error>(
+                        Bytes::from(
+                            format!("data: {}\n\n", msg)
+                        )
+                    );
+                }
+
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .insert_header(("Content-Type", "text/event-stream"))
+        .insert_header(("Cache-Control", "no-cache"))
+        .streaming(stream))
+}
+
+async fn logs_handler(logs_store: LogsStore, data: web::Bytes) -> Result<HttpResponse, AppError> {
+    let data = serde_json::from_slice::<Value>(&data).unwrap();
+
+    let project_id = data["project_id"].as_str().unwrap();
+
+    let log = data["log"].as_str().unwrap();
+
+    let file_path = "/home/scrom/code/shipr/logs";
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(format!("{}/{}.txt", file_path, project_id))
+        .unwrap();
+
+    writeln!(file, "{}", log).unwrap();
+
+    let tx = { logs_store.lock().await.get(project_id).cloned() };
+
+    if let Some(tx) = tx {
+        tx.send(log.to_string())?;
+    }
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -127,6 +263,9 @@ pub async fn listen(
 ) -> Result<(), AppError> {
     let installation_ids: InstallationStore =
         web::Data::new(Mutex::new(HashMap::<String, InstallationEvent>::new()));
+
+    let logs_store: LogsStore =
+        web::Data::new(Mutex::new(HashMap::<String, Sender<String>>::new()));
 
     let job_dispatcher = JobDispatcher::new(
         vm_pool.clone(),
@@ -207,9 +346,12 @@ pub async fn listen(
             .app_data(redeploy_queue.clone())
             .app_data(id_allocator.clone())
             .app_data(vm_pool.clone())
+            .app_data(logs_store.clone())
             .route("/kill-vm", web::post().to(kill_vm_handler))
             .route("/webhook/github", web::post().to(github_webhook))
             .route("/deploy", web::post().to(deploy_handler))
+            .route("/send-logs", web::post().to(logs_handler))
+            .route("/logs/{project_id}", web::get().to(stream_logs_handler))
             .route(
                 "/redeploy-completed",
                 web::post().to(redeploy_completed_handler),
