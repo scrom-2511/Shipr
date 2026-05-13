@@ -2,7 +2,10 @@ use actix_web::{HttpResponse, web};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::{app::auth::generate_token, app::db::DbPool, app::models::User, app_errors::AppError};
+use crate::{
+    app::{controllers::auth::generate_token, db::DbPool, models::User},
+    app_errors::AppError,
+};
 
 #[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct SigninRequest {
