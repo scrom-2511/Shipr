@@ -1,5 +1,30 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use aws_sdk_s3::presigning::PresigningConfigError;
+use serde::Serialize;
+use sqlx::error::Error as SqlxError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum ErrorCode {
+    InvalidGitUrl,
+    UnknownProjectType,
+    InvalidEmail,
+    PasswordTooShort,
+    UserAlreadyExists,
+    ValidationError,
+    InvalidCredentials,
+    UserNotFound,
+    IdAllocationFailed,
+    FailedToGetIdFromPool,
+    StartingFirecrackerFailed,
+    DatabaseError,
+    InternalServerError,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    pub error_code: ErrorCode,
+    pub message: String,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -14,6 +39,9 @@ pub enum AppError {
 
     #[error("serde json error: {0}")]
     SerdeJson(#[from] serde_json::Error),
+
+    #[error("SQLx error: {0}")]
+    SqlxError(#[from] SqlxError),
 
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
@@ -89,6 +117,50 @@ pub enum AppError {
 
     #[error("Starting server failed: {0}")]
     StartingServerFailed(String),
+
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("User already exists: {0}")]
+    UserAlreadyExists(String),
+
+    #[error("Invalid email format")]
+    InvalidEmail,
+
+    #[error("Password too short")]
+    PasswordTooShort,
+
+    #[error("Password hashing failed")]
+    PasswordHashFailed,
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    #[error("Invalid credentials")]
+    InvalidCredentials,
+
+    #[error("User not found")]
+    UserNotFound,
+}
+
+impl AppError {
+    pub fn error_code(&self) -> ErrorCode {
+        match self {
+            AppError::InvalidGitUrl => ErrorCode::InvalidGitUrl,
+            AppError::UnknownProjectType => ErrorCode::UnknownProjectType,
+            AppError::InvalidEmail => ErrorCode::InvalidEmail,
+            AppError::PasswordTooShort => ErrorCode::PasswordTooShort,
+            AppError::UserAlreadyExists(_) => ErrorCode::UserAlreadyExists,
+            AppError::ValidationError(_) => ErrorCode::ValidationError,
+            AppError::InvalidCredentials => ErrorCode::InvalidCredentials,
+            AppError::UserNotFound => ErrorCode::UserNotFound,
+            AppError::IdAllocationFailed(_) => ErrorCode::IdAllocationFailed,
+            AppError::FailedToGetIdFromPool(_) => ErrorCode::FailedToGetIdFromPool,
+            AppError::StartingFirecrackerFailed(_) => ErrorCode::StartingFirecrackerFailed,
+            AppError::Database(_) => ErrorCode::DatabaseError,
+            _ => ErrorCode::InternalServerError,
+        }
+    }
 }
 
 impl ResponseError for AppError {
@@ -96,6 +168,12 @@ impl ResponseError for AppError {
         match self {
             AppError::InvalidGitUrl => StatusCode::BAD_REQUEST,
             AppError::UnknownProjectType => StatusCode::BAD_REQUEST,
+            AppError::InvalidEmail => StatusCode::BAD_REQUEST,
+            AppError::PasswordTooShort => StatusCode::BAD_REQUEST,
+            AppError::UserAlreadyExists(_) => StatusCode::CONFLICT,
+            AppError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            AppError::UserNotFound => StatusCode::NOT_FOUND,
 
             AppError::IdAllocationFailed(_)
             | AppError::FailedToGetIdFromPool(_)
@@ -106,6 +184,10 @@ impl ResponseError for AppError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code()).body(self.to_string())
+        let response = ErrorResponse {
+            error_code: self.error_code(),
+            message: self.to_string(),
+        };
+        HttpResponse::build(self.status_code()).json(response)
     }
 }

@@ -1,9 +1,8 @@
+use crate::app::db::DbPool;
+use crate::app_errors::AppError;
 use actix_web::{HttpResponse, web};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
-
-use crate::app::db::DbPool;
-use crate::app_errors::AppError;
 
 #[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct SignupRequest {
