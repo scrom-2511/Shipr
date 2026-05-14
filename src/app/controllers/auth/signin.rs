@@ -3,7 +3,11 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::{
-    app::{controllers::auth::generate_token, db::DbPool, models::User},
+    app::{
+        controllers::{ApiResponse, auth::generate_token},
+        db::DbPool,
+        models::User,
+    },
     app_errors::AppError,
 };
 
@@ -16,41 +20,57 @@ pub struct SigninRequest {
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
-pub struct SigninResponse {
-    pub message: String,
-    pub token: String,
-}
-
 pub async fn signin_controller(
     pool: web::Data<DbPool>,
     body: web::Json<SigninRequest>,
 ) -> Result<HttpResponse, AppError> {
     let signin = body.into_inner();
 
+    println!("{:?}", signin);
+
     signin
         .validate()
         .map_err(|err| AppError::ValidationError(err.to_string()))?;
 
-    let query = "SELECT id, name, email, password, created_at FROM users WHERE email = $1";
+    println!("Valid credentials");
 
-    let user: User = sqlx::query_as(query)
+    let query = r#"
+        SELECT id, name, email, password, created_at 
+        FROM users 
+        WHERE email = $1
+    "#;
+
+    let user = sqlx::query_as::<_, User>(query)
         .bind(&signin.email)
         .fetch_one(pool.as_ref())
         .await
         .map_err(|_| AppError::UserNotFound)?;
 
+    println!("User found");
+
     let is_valid = bcrypt::verify(&signin.password, &user.password)
         .map_err(|_| AppError::PasswordHashFailed)?;
 
+    println!("Password verified");
+
     if !is_valid {
+        println!("Invalid credentials");
         return Err(AppError::InvalidCredentials);
     }
 
     let token = generate_token(user.id, &user.email)?;
 
-    Ok(HttpResponse::Ok().json(SigninResponse {
-        message: "Login successful".to_string(),
-        token,
-    }))
+    Ok(HttpResponse::Ok()
+        .cookie(
+            actix_web::cookie::Cookie::build("token", token)
+                .path("/")
+                .http_only(true)
+                .secure(false)
+                .finish(),
+        )
+        .json(ApiResponse::<()> {
+            success: true,
+            message: "Login successful".to_string(),
+            data: None,
+        }))
 }

@@ -1,3 +1,4 @@
+pub mod github_signup;
 pub mod signin;
 pub mod signup;
 
@@ -16,7 +17,7 @@ pub struct Claims {
     pub exp: u64,
 }
 
-pub fn generate_token(user_id: uuid::Uuid, email: &str) -> Result<String, AppError> {
+pub fn generate_token(user_id: i32, email: &str) -> Result<String, AppError> {
     let now = chrono::Utc::now().timestamp() as u64;
     let claims = Claims {
         sub: user_id.to_string(),

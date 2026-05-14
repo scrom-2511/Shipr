@@ -67,7 +67,7 @@ pub async fn add_new_project(
         .await;
 
     match result {
-        Ok(id) => Ok(HttpResponse::Created().json(AddProjectResponse {
+        Ok(_) => Ok(HttpResponse::Created().json(AddProjectResponse {
             message: "Project created successfully".to_string(),
         })),
         Err(e) => Err(AppError::Database(e.to_string())),
