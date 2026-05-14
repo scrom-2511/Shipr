@@ -1,5 +1,4 @@
-use crate::app::db::DbPool;
-use crate::app::models::Project;
+use crate::app::{db::DbPool, models::Project};
 use crate::app_errors::AppError;
 use actix_web::{HttpResponse, web};
 use serde::Serialize;
@@ -20,7 +19,7 @@ pub async fn get_all_projects(
 ) -> Result<HttpResponse, AppError> {
     let query_sql = "SELECT * FROM projects WHERE user_id = $1 ORDER BY created_at DESC";
 
-    let projects = sqlx::query_as::<_, Project>(query_sql)
+    let projects: Vec<Project> = sqlx::query_as(query_sql)
         .bind(query.user_id)
         .fetch_all(pool.as_ref())
         .await

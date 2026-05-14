@@ -13,12 +13,11 @@ use crate::{
 };
 
 pub async fn deploy_handler(
-    body: web::Bytes,
+    body: web::Json<DeployReq>,
     deploy_queue: web::Data<DeployQueue>,
     logs_store: LogsStore,
 ) -> Result<HttpResponse, AppError> {
-    println!("i was called");
-    let deploy_details = serde_json::from_slice::<DeployReq>(&body).unwrap();
+    let deploy_details = body.into_inner();
 
     println!("Deploy details: {:?}", deploy_details);
 
@@ -44,16 +43,6 @@ pub async fn deploy_handler(
     fs::create_dir_all(file_path).unwrap();
 
     fs::File::create(format!("{}/{}.txt", file_path, project_id)).unwrap();
-
-    // let log = "Waiting for queue...";
-
-    // let mut file = fs::OpenOptions::new()
-    //     .create(true)
-    //     .append(true)
-    //     .open(format!("{}/{}.txt", file_path, project_id))
-    //     .unwrap();
-
-    // writeln!(file, "{}", log).unwrap();
 
     logs_store.lock().await.insert(project_id.clone(), tx);
 

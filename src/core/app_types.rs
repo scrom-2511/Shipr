@@ -13,6 +13,7 @@ pub struct DeployReq {
     pub url: String,
     pub install: Vec<String>,
     pub build: Vec<String>,
+    pub run: Vec<String>,
     pub branch: String,
     pub dist_dir: String,
     pub home_dir: String,

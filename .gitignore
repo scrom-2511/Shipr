@@ -6,3 +6,5 @@ shipr-deployment.pem
 /job_jsons
 /logs
 CLAUDE.md
+FRONTEND_API_CONTEXT.md
+current.txt

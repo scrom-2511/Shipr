@@ -50,6 +50,9 @@ enum Commands {
         build: Vec<String>,
 
         #[arg(long)]
+        run: Vec<String>,
+
+        #[arg(long)]
         branch: String,
 
         #[arg(long)]
@@ -85,6 +88,7 @@ pub async fn cli(
             url,
             install,
             build,
+            run,
             branch,
             dist_dir,
             home_dir,
@@ -92,6 +96,7 @@ pub async fn cli(
             let deploy_req = DeployReq {
                 branch,
                 build,
+                run,
                 dist_dir,
                 home_dir,
                 install,

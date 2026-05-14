@@ -1,33 +1,13 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use aws_sdk_s3::presigning::PresigningConfigError;
-use serde::Serialize;
 use sqlx::error::Error as SqlxError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum ErrorCode {
-    InvalidGitUrl,
-    UnknownProjectType,
-    InvalidEmail,
-    PasswordTooShort,
-    UserAlreadyExists,
-    ValidationError,
-    InvalidCredentials,
-    UserNotFound,
-    IdAllocationFailed,
-    FailedToGetIdFromPool,
-    StartingFirecrackerFailed,
-    DatabaseError,
-    InternalServerError,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    pub error_code: ErrorCode,
-    pub message: String,
-}
+use crate::app::controllers::ApiResponse;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("GitHub OAuth error: {0}")]
+    GithubOAuthError(String),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
@@ -141,26 +121,9 @@ pub enum AppError {
 
     #[error("User not found")]
     UserNotFound,
-}
 
-impl AppError {
-    pub fn error_code(&self) -> ErrorCode {
-        match self {
-            AppError::InvalidGitUrl => ErrorCode::InvalidGitUrl,
-            AppError::UnknownProjectType => ErrorCode::UnknownProjectType,
-            AppError::InvalidEmail => ErrorCode::InvalidEmail,
-            AppError::PasswordTooShort => ErrorCode::PasswordTooShort,
-            AppError::UserAlreadyExists(_) => ErrorCode::UserAlreadyExists,
-            AppError::ValidationError(_) => ErrorCode::ValidationError,
-            AppError::InvalidCredentials => ErrorCode::InvalidCredentials,
-            AppError::UserNotFound => ErrorCode::UserNotFound,
-            AppError::IdAllocationFailed(_) => ErrorCode::IdAllocationFailed,
-            AppError::FailedToGetIdFromPool(_) => ErrorCode::FailedToGetIdFromPool,
-            AppError::StartingFirecrackerFailed(_) => ErrorCode::StartingFirecrackerFailed,
-            AppError::Database(_) => ErrorCode::DatabaseError,
-            _ => ErrorCode::InternalServerError,
-        }
-    }
+    #[error("Internal server error")]
+    InternalServerError,
 }
 
 impl ResponseError for AppError {
@@ -174,6 +137,7 @@ impl ResponseError for AppError {
             AppError::ValidationError(_) => StatusCode::BAD_REQUEST,
             AppError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AppError::UserNotFound => StatusCode::NOT_FOUND,
+            AppError::GithubOAuthError(_) => StatusCode::BAD_REQUEST,
 
             AppError::IdAllocationFailed(_)
             | AppError::FailedToGetIdFromPool(_)
@@ -184,9 +148,10 @@ impl ResponseError for AppError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        let response = ErrorResponse {
-            error_code: self.error_code(),
+        let response = ApiResponse::<()> {
+            success: false,
             message: self.to_string(),
+            data: None,
         };
         HttpResponse::build(self.status_code()).json(response)
     }
