@@ -1,0 +1,32 @@
+use actix_web::{
+    Error, HttpMessage,
+    body::MessageBody,
+    dev::{ServiceRequest, ServiceResponse},
+    middleware::Next,
+};
+
+use crate::{app::controllers::auth::decode_token, app_errors::AppError};
+
+pub async fn is_logged_in(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    let auth_token = req.cookie("auth-token");
+
+    if auth_token.is_some() {
+        let decoded = decode_token(auth_token.unwrap().value());
+
+        match decoded {
+            Ok(claims) => {
+                req.extensions_mut().insert(claims);
+            }
+            Err(_) => {
+                return Err(Error::from(AppError::InvalidCredentials));
+            }
+        }
+    } else {
+        return Err(Error::from(AppError::InvalidCredentials));
+    }
+
+    next.call(req).await
+}
