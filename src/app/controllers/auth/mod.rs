@@ -7,21 +7,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::app_errors::AppError;
 
-pub const JWT_SECRET: &[u8] = b"shipr_jwt_secret_key_2024";
+pub const JWT_SECRET: &[u8] = b"shipr_jwt_secret_key_2026";
 
 #[derive(Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,
-    pub email: String,
+    pub user_id: i32,
     pub iat: u64,
     pub exp: u64,
 }
 
-pub fn generate_token(user_id: i32, email: &str) -> Result<String, AppError> {
+pub fn generate_token(user_id: i32) -> Result<String, AppError> {
     let now = chrono::Utc::now().timestamp() as u64;
     let claims = Claims {
-        sub: user_id.to_string(),
-        email: email.to_string(),
+        user_id: user_id,
         iat: now,
         exp: now + (24 * 60 * 60),
     };

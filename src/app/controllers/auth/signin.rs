@@ -35,7 +35,7 @@ pub async fn signin_controller(
     println!("Valid credentials");
 
     let query = r#"
-        SELECT id, name, email, password, created_at 
+        SELECT email, password
         FROM users 
         WHERE email = $1
     "#;
@@ -58,7 +58,7 @@ pub async fn signin_controller(
         return Err(AppError::InvalidCredentials);
     }
 
-    let token = generate_token(user.id, &user.email)?;
+    let token = generate_token(user.id)?;
 
     Ok(HttpResponse::Ok()
         .cookie(

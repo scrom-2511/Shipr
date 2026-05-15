@@ -3,7 +3,10 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    app::{controllers::ApiResponse, middlewares::AuthMiddleware},
+    app::{
+        controllers::{ApiResponse, auth::generate_token},
+        middlewares::AuthMiddleware,
+    },
     app_errors::AppError,
 };
 
@@ -23,25 +26,11 @@ struct StateResponse {
 pub async fn get_state(req: HttpRequest) -> Result<HttpResponse, AppError> {
     let user_id = req.extensions().get::<AuthMiddleware>().unwrap().user_id;
 
-    let header = Header::new(Algorithm::HS256);
-
-    let now = chrono::Utc::now().timestamp() as u64;
-
-    let claims = &StateClaims {
-        user_id,
-        exp: now + (24 * 60 * 60),
-    };
-
-    let state = jsonwebtoken::encode(
-        &header,
-        claims,
-        &EncodingKey::from_secret(JWT_SECRET.as_bytes()),
-    )
-    .map_err(|_| AppError::InternalServerError);
+    let state = generate_token(user_id)?;
 
     Ok(HttpResponse::Ok().json(ApiResponse {
         success: true,
         message: "State generated successfully".to_string(),
-        data: Some(StateResponse { state: state? }),
+        data: Some(StateResponse { state }),
     }))
 }

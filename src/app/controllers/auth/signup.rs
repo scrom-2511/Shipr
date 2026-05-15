@@ -8,7 +8,7 @@ use validator::Validate;
 #[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct SignupRequest {
     #[validate(length(min = 1, message = "Name is required"))]
-    pub name: String,
+    pub username: String,
 
     #[validate(email(message = "Invalid email format"))]
     pub email: String,
@@ -37,10 +37,10 @@ pub async fn signup_controller(
     let hashed_password =
         bcrypt::hash(&signup.password, 10).map_err(|_| AppError::InternalServerError)?;
 
-    let query = "INSERT INTO users (name, email, password) VALUES ($1, $2, $3)";
+    let query = "INSERT INTO users (username, email, password) VALUES ($1, $2, $3)";
 
     let result = sqlx::query(query)
-        .bind(&signup.name)
+        .bind(&signup.username)
         .bind(&signup.email)
         .bind(&hashed_password)
         .execute(pool.as_ref())

@@ -5,7 +5,10 @@ use actix_web::{
     middleware::Next,
 };
 
-use crate::{app::controllers::auth::decode_token, app_errors::AppError};
+use crate::{
+    app::{controllers::auth::decode_token, middlewares::AuthMiddleware},
+    app_errors::AppError,
+};
 
 pub async fn is_logged_in(
     req: ServiceRequest,
@@ -18,7 +21,9 @@ pub async fn is_logged_in(
 
         match decoded {
             Ok(claims) => {
-                req.extensions_mut().insert(claims);
+                req.extensions_mut().insert(AuthMiddleware {
+                    user_id: claims.user_id,
+                });
             }
             Err(_) => {
                 return Err(Error::from(AppError::InvalidCredentials));
