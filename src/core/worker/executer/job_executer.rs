@@ -4,13 +4,16 @@ use tokio::net::TcpStream;
 
 use crate::{
     app_errors::AppError,
-    core::app_types::{DeployDetails, JobType, RedeployDetails, RunDetails},
-    core::config::{app_config::get_worker_dir, project_default_config::get_default_config},
-    core::infra::{
-        detect::detect_project_type,
-        process::{run_script, run_script_bg},
+    core::{
+        app_types::{DeployDetails, JobType, RedeployDetails, RunDetails},
+        config::{app_config::get_worker_dir, project_default_config::get_default_config},
+        infra::{
+            detect::detect_project_type,
+            process::{run_script, run_script_bg},
+        },
+        worker::api::host::Host,
     },
-    core::worker::api::{githubapp::GithubApp, host::Host},
+    shared::github_app::GithubApp,
 };
 
 pub struct JobExecuter {
@@ -43,17 +46,20 @@ impl JobExecuter {
     }
 
     async fn pull(&self, deploy_details: &DeployDetails) -> Result<(), AppError> {
-        let mut github_app = GithubApp::new(
-            deploy_details.access_token.to_owned(),
-            deploy_details.owner.to_owned(),
-            deploy_details.repo.to_owned(),
-        );
+        let mut github_app = GithubApp::new();
 
         self.host
             .send_logs(&deploy_details.project_id, "Pulling repository...")
             .await?;
 
-        let tarball_url = github_app.get_tarball_url(&deploy_details.branch).await?;
+        let tarball_url = github_app
+            .get_tarball_url(
+                deploy_details.branch.as_deref(),
+                &deploy_details.installation_id,
+                &deploy_details.owner,
+                &deploy_details.repo,
+            )
+            .await?;
         println!("tarball url is: {}", tarball_url);
 
         let git_pull_cmd = format!(
@@ -95,14 +101,18 @@ impl JobExecuter {
             .send_logs(&deploy_details.project_id, "Installing dependencies...")
             .await?;
 
-        if !deploy_details.install_commands.is_empty() {
+        if !deploy_details.install_commands.is_none() {
             self.host
                 .send_logs(
                     &deploy_details.project_id,
                     "Found custom install commands, using them...",
                 )
                 .await?;
-            let install_cmd = deploy_details.install_commands.join(" && ");
+            let install_cmd = deploy_details
+                .install_commands
+                .as_ref()
+                .unwrap()
+                .join(" && ");
 
             let final_cmd = format!("cd {} && {}", project_path, install_cmd);
 
@@ -156,14 +166,14 @@ impl JobExecuter {
             .send_logs(&deploy_details.project_id, "Building project...")
             .await?;
 
-        if !deploy_details.build_commands.is_empty() {
+        if !deploy_details.build_commands.is_none() {
             self.host
                 .send_logs(
                     &deploy_details.project_id,
                     "Found custom build commands, using them...",
                 )
                 .await?;
-            let build_cmd = deploy_details.build_commands.join(" && ");
+            let build_cmd = deploy_details.build_commands.as_ref().unwrap().join(" && ");
 
             let final_cmd = format!("cd {} && {}", project_path, build_cmd);
 

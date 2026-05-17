@@ -48,14 +48,8 @@ pub async fn listen(
     );
 
     for _ in 0..1 {
-        let new_id = id_allocator.allocate_id().await?;
-
-        println!("New ID listen: {}", new_id);
-
-        let mut new_vm = Firecracker::new(new_id);
-
-        new_vm.create_vm().await?;
-        vm_pool.add_to_ideal_vms(new_id).await?;
+        let mut new_vm = Firecracker::new_from_id_allocator(&id_allocator).await;
+        new_vm.create_new_vm_and_add_to_pool(&vm_pool).await?;
     }
 
     let lapin_conn = Lapin::new().await?;
@@ -70,13 +64,11 @@ pub async fn listen(
         let id_allocator = id_allocator.clone();
         let vm_pool = vm_pool.clone();
         let deploy_queue = deploy_queue.clone();
-        let installation_ids = installation_ids.clone();
         let job_dispatcher = job_dispatcher.clone();
         let s3_service = s3_service.clone();
 
         tokio::spawn(async move {
             listen_deploy(
-                installation_ids,
                 s3_service,
                 job_dispatcher,
                 id_allocator,

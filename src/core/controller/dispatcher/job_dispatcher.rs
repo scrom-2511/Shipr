@@ -75,7 +75,6 @@ impl VmDetails for RedeployDetails {
 
 #[derive(Clone)]
 pub struct JobDispatcher {
-    vm: Option<Firecracker>,
     vm_pool: VmPool,
     pub s3_service: S3Service,
     id_allocator: IdAllocator,
@@ -90,7 +89,6 @@ impl JobDispatcher {
         heartbeat_store: HeartbeatStore,
     ) -> Self {
         Self {
-            vm: None,
             vm_pool,
             s3_service,
             id_allocator,
@@ -108,42 +106,11 @@ impl JobDispatcher {
         Err(AppError::InvalidGitUrl)
     }
 
-    async fn get_or_create_vm(
-        &mut self,
-        project_id: &str,
-        job_type: JobType,
-    ) -> Result<(u8, bool), AppError> {
-        let something = self.vm_pool.get_from_pool(project_id, &job_type).await?;
-
-        match something {
-            Some(id) => {
-                self.vm = Some(Firecracker::new(id));
-
-                println!("VM found in pool: {}", id);
-                Ok((id, false))
-            }
-            None => {
-                let new_id = self
-                    .vm_pool
-                    .get_from_ideal_vms()
-                    .await
-                    .map_err(|_| AppError::NoAvailableVm)?
-                    .unwrap();
-
-                self.vm_pool
-                    .add_to_pool(project_id, &job_type, new_id)
-                    .await?;
-                self.vm = Some(Firecracker::new(new_id));
-
-                println!("VM from ideal: {}", new_id);
-
-                Ok((new_id, true))
-            }
-        }
-    }
-
-    async fn move_json_to_vm(&self, vm_details: &impl VmDetails) -> Result<(), AppError> {
-        let vm = self.vm.as_ref().expect("VM not found");
+    async fn move_json_to_vm(
+        &self,
+        vm: &Firecracker,
+        vm_details: &impl VmDetails,
+    ) -> Result<(), AppError> {
         vm.get_base_id();
 
         println!("vm base_id is: {}", vm.get_base_id());
@@ -182,11 +149,15 @@ impl JobDispatcher {
     ) -> Result<(), AppError> {
         self.git_url_validator(&deploy_details.url)?;
 
-        let (vm_id, _) = self
+        let vm = self
+            .vm_pool
             .get_or_create_vm(&deploy_details.project_id, JobType::Deploy)
-            .await?;
+            .await?
+            .0;
 
-        self.move_json_to_vm(deploy_details).await?;
+        let vm_id = vm.get_base_id();
+
+        self.move_json_to_vm(&vm, deploy_details).await?;
 
         let base_id = vm_id * 4;
 
@@ -200,10 +171,7 @@ impl JobDispatcher {
             get_dir(),
         )?;
 
-        self.vm
-            .as_ref()
-            .unwrap()
-            .execute_command("cd /root && ./worker job.json deploy")?;
+        vm.execute_command("cd /root && ./worker job.json deploy")?;
 
         Ok(())
     }
@@ -212,13 +180,14 @@ impl JobDispatcher {
         &mut self,
         redeploy_details: &RedeployDetails,
     ) -> Result<(), AppError> {
-        let (vm_id, _) = self
+        let (vm, _) = self
+            .vm_pool
             .get_or_create_vm(&redeploy_details.project_id, JobType::Redeploy)
             .await?;
 
-        self.move_json_to_vm(redeploy_details).await?;
+        self.move_json_to_vm(&vm, redeploy_details).await?;
 
-        let base_id = vm_id * 4;
+        let base_id = vm.get_base_id();
 
         let vm_ip = format!("172.16.0.{}", base_id + 2);
 
@@ -230,20 +199,20 @@ impl JobDispatcher {
             get_dir(),
         )?;
 
-        self.vm
-            .as_ref()
-            .unwrap()
-            .execute_command("cd /root && ./worker job.json redeploy")?;
+        vm.execute_command("cd /root && ./worker job.json redeploy")?;
 
         Ok(())
     }
 
     pub async fn dispatch_run_job(&mut self, project_id: &str) -> Result<(), AppError> {
-        let (vm_id, is_new) = self.get_or_create_vm(&project_id, JobType::Run).await?;
+        let (vm, is_new) = self
+            .vm_pool
+            .get_or_create_vm(&project_id, JobType::Run)
+            .await?;
 
         println!("is new is: {}", is_new);
 
-        let base_id = vm_id * 4;
+        let base_id = vm.get_base_id();
 
         let vm_ip = format!("172.16.0.{}", base_id + 2);
 
@@ -269,7 +238,7 @@ impl JobDispatcher {
                 project_id: project_id.to_string(),
             };
 
-            self.move_json_to_vm(&run_details).await?;
+            self.move_json_to_vm(&vm, &run_details).await?;
 
             let id_allocator = self.id_allocator.clone();
             let vm_pool = self.vm_pool.clone();
@@ -277,11 +246,9 @@ impl JobDispatcher {
             let project_id = project_id.to_string();
 
             tokio::task::spawn(async move {
-                let new_id = id_allocator.allocate_id().await?;
-                let mut new_vm = Firecracker::new(new_id);
+                let mut new_vm = Firecracker::new_from_id_allocator(&id_allocator).await;
 
-                new_vm.create_vm().await?;
-                vm_pool.add_to_ideal_vms(new_id).await?;
+                new_vm.create_new_vm_and_add_to_pool(&vm_pool).await?;
 
                 let mut count = 0;
 
@@ -303,10 +270,7 @@ impl JobDispatcher {
                 Ok::<(), AppError>(())
             });
 
-            self.vm
-                .as_ref()
-                .unwrap()
-                .execute_command_bg("cd /root && ./worker job.json run")?;
+            vm.execute_command_bg("cd /root && ./worker job.json run")?;
         }
 
         Ok(())

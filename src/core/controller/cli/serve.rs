@@ -48,13 +48,8 @@ pub async fn serve(
         let vm_pool = vm_pool.clone();
 
         task::spawn(async move {
-            let new_id = id_allocator.allocate_id().await?;
-            println!("New ID serve: {}", new_id);
-
-            let mut new_vm = Firecracker::new(new_id);
-
-            new_vm.create_vm().await?;
-            vm_pool.add_to_ideal_vms(new_id).await?;
+            let mut new_vm = Firecracker::new_from_id_allocator(&id_allocator).await;
+            new_vm.create_new_vm_and_add_to_pool(&vm_pool).await?;
 
             Ok::<(), AppError>(())
         });

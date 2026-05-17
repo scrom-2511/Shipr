@@ -4,14 +4,16 @@ use actix_web::web;
 
 use crate::{
     app_errors::AppError,
-    core::app_types::RedeployDetails,
-    core::controller::{
-        api::github::Github,
-        dispatcher::job_dispatcher::JobDispatcher,
-        queue::redeploy_queue::ReDeployQueue,
-        storage::s3::S3Service,
-        vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+    core::{
+        app_types::RedeployDetails,
+        controller::{
+            dispatcher::job_dispatcher::JobDispatcher,
+            queue::redeploy_queue::ReDeployQueue,
+            storage::s3::S3Service,
+            vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+        },
     },
+    shared::github_app::GithubApp,
 };
 
 pub async fn listen_redeploy(
@@ -38,7 +40,7 @@ pub async fn listen_redeploy(
             (parts[0].to_string(), parts[1].to_string())
         };
 
-        let github = Github::new(3566236, &owner, &repo);
+        let github = GithubApp::new();
 
         let presigned_upload_url = s3_service
             .get_presigned_upload_url(&project_id)
@@ -50,7 +52,7 @@ pub async fn listen_redeploy(
             .await
             .unwrap();
 
-        let access_token = github.get_installation_access_token().await.unwrap();
+        let access_token = github.get_installation_access_token(12345).await.unwrap();
 
         let redeploy_details = RedeployDetails {
             commit_hash: redeploy_event.after,
@@ -64,11 +66,8 @@ pub async fn listen_redeploy(
         let vm_pool = vm_pool.clone();
 
         tokio::task::spawn(async move {
-            let new_id = id_allocator.allocate_id().await?;
-            let mut new_vm = Firecracker::new(new_id);
-
-            new_vm.create_vm().await?;
-            vm_pool.add_to_ideal_vms(new_id).await?;
+            let mut new_vm = Firecracker::new_from_id_allocator(&id_allocator).await;
+            new_vm.create_new_vm_and_add_to_pool(&vm_pool).await?;
 
             Ok::<(), AppError>(())
         });

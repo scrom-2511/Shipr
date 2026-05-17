@@ -48,7 +48,7 @@ pub async fn deploy_handler(
 
     println!("{:?}", logs_store.lock().await.keys());
 
-    deploy_queue.publish(&deploy_details).await?;
+    deploy_queue.add_to_queue(&deploy_details).await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "project_id": project_id

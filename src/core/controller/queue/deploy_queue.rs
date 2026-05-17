@@ -44,7 +44,7 @@ impl DeployQueue {
         Ok(Self { channel, queue })
     }
 
-    pub async fn publish(&self, deploy_details: &DeployReq) -> Result<(), AppError> {
+    pub async fn add_to_queue(&self, deploy_details: &DeployReq) -> Result<(), AppError> {
         self.channel
             .basic_publish(
                 ShortString::from(""),
@@ -61,7 +61,7 @@ impl DeployQueue {
         Ok(())
     }
 
-    pub async fn consume(&self) -> Result<DeployReq, AppError> {
+    pub async fn pop_from_queue(&self) -> Result<DeployReq, AppError> {
         let mut consumer = self
             .channel
             .basic_consume(

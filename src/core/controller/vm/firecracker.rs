@@ -1,7 +1,10 @@
 use crate::{
     app_errors::AppError,
-    core::config::app_config::get_dir,
-    core::infra::process::{run_script, run_script_bg},
+    core::{
+        config::app_config::get_dir,
+        controller::vm::{id_allocator::IdAllocator, vm_pool::VmPool},
+        infra::process::{run_script, run_script_bg},
+    },
 };
 use std::{
     process::{Command, Stdio},
@@ -18,7 +21,28 @@ pub struct Firecracker {
 }
 
 impl Firecracker {
-    pub fn new(vm_id: u8) -> Self {
+    pub async fn new_from_id_allocator(id_allocator: &IdAllocator) -> Self {
+        let vm_id = id_allocator.allocate_id().await.unwrap();
+        let api_socket = format!("/tmp/firecracker-{}.socket", vm_id);
+
+        let path: &str = api_socket.as_ref();
+
+        let client = reqwest::Client::builder()
+            .unix_socket(path)
+            .build()
+            .unwrap();
+
+        let base_id = vm_id * 4;
+
+        Self {
+            api_socket,
+            vm_id,
+            client,
+            base_id,
+        }
+    }
+
+    pub fn new_from_vm_id(vm_id: u8) -> Self {
         let api_socket = format!("/tmp/firecracker-{}.socket", vm_id);
 
         let path: &str = api_socket.as_ref();
@@ -266,6 +290,16 @@ impl Firecracker {
         self.setup_ssh().await?;
 
         println!("VM created successfully");
+
+        Ok(())
+    }
+
+    pub async fn create_new_vm_and_add_to_pool(
+        &mut self,
+        vm_pool: &VmPool,
+    ) -> Result<(), AppError> {
+        self.create_vm().await?;
+        vm_pool.add_to_ideal_vms(self.vm_id).await?;
 
         Ok(())
     }

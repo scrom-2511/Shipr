@@ -1,20 +1,31 @@
 use redis::AsyncCommands;
 
 use crate::{
-    app_errors::AppError, core::app_types::JobType, core::controller::storage::redis::Redis,
+    app_errors::AppError,
+    core::{
+        app_types::JobType,
+        controller::{
+            storage::redis::Redis,
+            vm::{firecracker::Firecracker, id_allocator::IdAllocator},
+        },
+    },
 };
 
 #[derive(Clone)]
 pub struct VmPool {
     redis: Redis,
+    id_allocator: IdAllocator,
 }
 
 const IDEAL_VMS_QUEUE: &str = "ideal_vms:queue";
 const IDEAL_VMS_SEEN: &str = "ideal_vms:seen";
 
 impl VmPool {
-    pub fn new(redis: Redis) -> Self {
-        Self { redis }
+    pub fn new(redis: Redis, id_allocator: IdAllocator) -> Self {
+        Self {
+            redis,
+            id_allocator,
+        }
     }
 
     pub async fn add_to_pool(
@@ -83,5 +94,28 @@ impl VmPool {
         }
 
         Ok(vm_id)
+    }
+
+    pub async fn get_or_create_vm(
+        &self,
+        project_id: &str,
+        job_type: JobType,
+    ) -> Result<(Firecracker, bool), AppError> {
+        let something = self.get_from_pool(project_id, &job_type).await?;
+
+        match something {
+            Some(id) => {
+                let vm = Firecracker::new_from_vm_id(id);
+
+                println!("VM found in pool: {}", id);
+                Ok((vm, false))
+            }
+            None => {
+                let mut new_vm = Firecracker::new_from_id_allocator(&self.id_allocator).await;
+                new_vm.create_new_vm_and_add_to_pool(self).await;
+
+                Ok((new_vm, true))
+            }
+        }
     }
 }

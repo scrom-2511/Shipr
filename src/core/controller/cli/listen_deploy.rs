@@ -4,18 +4,19 @@ use actix_web::web;
 
 use crate::{
     app_errors::AppError,
-    core::app_types::{DeployDetails, InstallationStore},
-    core::controller::{
-        api::github::Github,
-        dispatcher::job_dispatcher::JobDispatcher,
-        queue::deploy_queue::DeployQueue,
-        storage::s3::S3Service,
-        vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+    core::{
+        app_types::DeployDetails,
+        controller::{
+            dispatcher::job_dispatcher::JobDispatcher,
+            queue::deploy_queue::DeployQueue,
+            storage::s3::S3Service,
+            vm::{firecracker::Firecracker, id_allocator::IdAllocator, vm_pool::VmPool},
+        },
     },
+    shared::github_app::GithubApp,
 };
 
 pub async fn listen_deploy(
-    installation_ids: InstallationStore,
     s3_service: S3Service,
     mut job_dispatcher: JobDispatcher,
     id_allocator: IdAllocator,
@@ -23,7 +24,7 @@ pub async fn listen_deploy(
     deploy_queue: web::Data<DeployQueue>,
 ) {
     loop {
-        let deploy_details_req = match deploy_queue.consume().await {
+        let deploy_details_req = match deploy_queue.pop_from_queue().await {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("Queue error: {:?}", e);
@@ -32,30 +33,22 @@ pub async fn listen_deploy(
             }
         };
 
+        let github = GithubApp::new();
+
+        let access_token = github.get_installation_access_token(12345).await.unwrap();
+
         let url = deploy_details_req.url.clone();
-        println!("Received job for URL: {}", url);
-
-        let installation_event = loop {
-            if let Some(ev) = installation_ids.lock().await.get(&url).cloned() {
-                break ev;
-            }
-
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        };
 
         let cleaned_url = url.replace(".git", "");
 
         println!("Cleaned URL: {}", cleaned_url);
 
-        let project_id = installation_event.repositories[0]
-            .full_name
-            .replace("/", "-");
+        let full_name = deploy_details_req.full_name;
+
+        let project_id = full_name.replace("/", "-");
 
         let (owner, repo) = {
-            let parts: Vec<&str> = installation_event.repositories[0]
-                .full_name
-                .split('/')
-                .collect();
+            let parts: Vec<&str> = full_name.split('/').collect();
             (parts[0].to_string(), parts[1].to_string())
         };
 
@@ -64,10 +57,6 @@ pub async fn listen_deploy(
             .await
             .unwrap();
 
-        let github = Github::new(3566236, &owner, &repo);
-
-        let access_token = github.get_installation_access_token().await.unwrap();
-
         println!("Access Token fetched");
 
         let deploy_details = DeployDetails {
@@ -75,12 +64,12 @@ pub async fn listen_deploy(
             install_commands: deploy_details_req.install,
             build_commands: deploy_details_req.build,
             branch: deploy_details_req.branch,
-            project_id,
+            project_id: project_id.to_string(),
             home_dir: deploy_details_req.home_dir,
             dist_dir: deploy_details_req.dist_dir,
             presigned_upload_url,
-            owner,
-            repo,
+            owner: owner.to_string(),
+            repo: repo.to_string(),
             access_token,
         };
 
@@ -88,11 +77,8 @@ pub async fn listen_deploy(
         let vm_pool = vm_pool.clone();
 
         tokio::task::spawn(async move {
-            let new_id = id_allocator.allocate_id().await?;
-            let mut new_vm = Firecracker::new(new_id);
-
-            new_vm.create_vm().await?;
-            vm_pool.add_to_ideal_vms(new_id).await?;
+            let mut new_vm = Firecracker::new_from_id_allocator(&id_allocator).await;
+            new_vm.create_new_vm_and_add_to_pool(&vm_pool).await?;
 
             Ok::<(), AppError>(())
         });

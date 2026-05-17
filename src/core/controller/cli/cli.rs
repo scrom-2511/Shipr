@@ -1,32 +1,15 @@
 use std::net::UdpSocket;
 
-use actix_web::{
-    App, HttpRequest, HttpResponse, HttpServer,
-    web::{self},
-};
 use clap::{Parser, Subcommand};
-use futures::lock::Mutex;
-use reqwest::Client;
-use tokio::task;
 
 use crate::{
     app_errors::AppError,
-    core::app_types::{
-        DeployDetails, DeployReq, EventType, InstallationEvent, RedeployDetails, RedeployEvent,
-    },
-    core::config::app_config::get_dir,
+    core::app_types::DeployReq,
     core::controller::{
-        api::{github::Github, vm_request_proxy::VmRequestProxy},
         cli::{deploy::deploy, listen::listen, serve::serve},
-        dispatcher::job_dispatcher::JobDispatcher,
-        queue::{deploy_queue::DeployQueue, lapin::Lapin, redeploy_queue::ReDeployQueue},
         storage::s3::S3Service,
-        vm::{
-            firecracker::Firecracker, heartbeat_store::HeartbeatStore, id_allocator::IdAllocator,
-            vm_pool::VmPool,
-        },
+        vm::{heartbeat_store::HeartbeatStore, id_allocator::IdAllocator, vm_pool::VmPool},
     },
-    core::infra::process::run_script,
 };
 
 #[derive(Parser)]
@@ -94,13 +77,14 @@ pub async fn cli(
             home_dir,
         } => {
             let deploy_req = DeployReq {
-                branch,
-                build,
-                run,
+                branch: Some(branch),
+                build: Some(build),
+                run: Some(run),
                 dist_dir,
                 home_dir,
-                install,
+                install: Some(install),
                 url,
+                full_name,
             };
 
             deploy(deploy_req).await?;

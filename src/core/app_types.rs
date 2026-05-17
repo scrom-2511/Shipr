@@ -11,20 +11,22 @@ pub type LogsStore = web::Data<Mutex<HashMap<String, Sender<String>>>>;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DeployReq {
     pub url: String,
-    pub install: Vec<String>,
-    pub build: Vec<String>,
-    pub run: Vec<String>,
-    pub branch: String,
+    pub install: Option<Vec<String>>,
+    pub build: Option<Vec<String>>,
+    pub run: Option<Vec<String>>,
+    pub branch: Option<String>,
     pub dist_dir: String,
     pub home_dir: String,
+    pub full_name: String,
+    pub installation_id: u64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DeployDetails {
     pub url: String,
-    pub branch: String,
-    pub install_commands: Vec<String>,
-    pub build_commands: Vec<String>,
+    pub branch: Option<String>,
+    pub install_commands: Option<Vec<String>>,
+    pub build_commands: Option<Vec<String>>,
     pub project_id: String,
     pub home_dir: String,
     pub dist_dir: String,
